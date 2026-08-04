@@ -1,0 +1,411 @@
+"""End-to-end dispatch pipeline.
+
+Exercises the full ordering -- exact cache, sensitivity, embed, classify,
+semantic cache, retrieval, route, decision record -- against fake providers so
+no network or model is required.
+"""
+
+import json
+import pytest
+from unittest.mock import AsyncMock
+
+from fastapi.testclient import TestClient
+
+from router import main as m
+from router import metrics as router_metrics
+from router.auth import Authenticator
+from router.cache import CacheManager, SemanticCache
+from router.intent import ClassifierConfig, IntentClassifier
+from router.policy import PolicyEngine, Rule, Action
+from router.profiles import ProfileRegistry
+from router.providers.registry import ProviderRegistry
+from tests.test_routing import FakeProvider
+
+PRIVATE_KEY = (
+    "-----BEGIN PRIVATE KEY-----\nMIIBVgIBADANBgkqhkiG9w0\n-----END PRIVATE KEY-----"
+)
+
+CONFIG = {
+    "routing": {
+        "default_profile": "general",
+        "profiles": {
+            "general": {"pool": ["ollama", "groq"]},
+            "code": {"pool": ["deepseek_local", "ollama"], "temperature": 0.2},
+            "knowledge": {"pool": ["ollama"], "retrieval": True, "retrieval_top_k": 2},
+        },
+        "intents": {
+            "code": {"profile": "code"},
+            "rag": {"profile": "knowledge"},
+        },
+    },
+    "policy": {
+        "enabled": True,
+        "fail_closed": True,
+        "default": {
+            "rules": [
+                {"detector": "private_key", "action": "block"},
+                {"detector": "any_pii", "action": "local_only"},
+            ]
+        },
+    },
+}
+
+
+class StubCache:
+    """In-memory stand-in for the exact Redis cache."""
+
+    def __init__(self):
+        self.store = {}
+        self.is_connected = True
+        self.client = None
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ttl=300):
+        self.store[key] = json.loads(json.dumps(value))
+
+    async def clear(self):
+        self.store.clear()
+
+    async def stats(self):
+        return {"connected": True, "keys_in_db": len(self.store)}
+
+
+class StubSemanticCache(SemanticCache):
+    """Deterministic embeddings keyed off the prompt text."""
+
+    def __init__(self, vectors=None):
+        super().__init__(redis_client=None, enabled=True)
+        self.vectors = vectors or {}
+        self.entries = []
+        self.embed_calls = 0
+
+    async def embed(self, text):
+        self.embed_calls += 1
+        return self.vectors.get(text, [1.0, 0.0, 0.0])
+
+    async def lookup(self, workspace_id, embedding, **kwargs):
+        sig = kwargs.get("sig")
+        for entry in self.entries:
+            if sig is not None and entry.get("signature") not in (None, sig):
+                continue
+            if entry["embedding"] == embedding:
+                return entry["response"], 0.0, {"intent": entry.get("intent")}
+        return None
+
+    async def store(self, workspace_id, embedding, response, **kwargs):
+        self.entries.append(
+            {
+                "embedding": embedding,
+                "response": response,
+                "intent": kwargs.get("intent"),
+                "signature": kwargs.get("sig"),
+                "partition": kwargs.get("partition"),
+            }
+        )
+
+
+@pytest.fixture(autouse=True)
+def wire(monkeypatch):
+    """Install the fake stack into the module-level globals main.py uses."""
+    router_metrics.reset()
+
+    registry = ProviderRegistry()
+    registry.config = CONFIG
+    registry.providers = {
+        "ollama": FakeProvider(
+            "ollama", {"local": True, "priority": 1, "free": True}
+        ),
+        "deepseek_local": FakeProvider(
+            "deepseek_local", {"local": True, "priority": 2, "free": True}
+        ),
+        "groq": FakeProvider("groq", {"priority": 3, "free": True}),
+    }
+
+    classifier = IntentClassifier(
+        config=ClassifierConfig(
+            knn_k=1, margin_threshold=0.05, min_similarity=0.5, temperature=0.1,
+            rule_prior_weight=0.0,
+        )
+    )
+    classifier.index = {
+        "code": [[1.0, 0.0, 0.0]],
+        "rag": [[0.0, 1.0, 0.0]],
+    }
+    classifier.examples = {"code": [], "rag": []}
+    classifier.is_ready = True
+
+    monkeypatch.setattr(m, "registry", registry)
+    monkeypatch.setattr(m, "cache", StubCache())
+    monkeypatch.setattr(m, "semantic_cache", StubSemanticCache())
+    monkeypatch.setattr(m, "rate_limiter", None)
+    monkeypatch.setattr(m, "usage_tracker", None)
+    monkeypatch.setattr(m, "sentinel_client", None)
+    monkeypatch.setattr(m, "mind_client", None)
+    monkeypatch.setattr(m, "classifier", classifier)
+    monkeypatch.setattr(m, "policy_engine", PolicyEngine.from_config(CONFIG))
+    monkeypatch.setattr(m, "profiles", ProfileRegistry.from_config(CONFIG))
+    monkeypatch.setattr(m, "authenticator", Authenticator())
+    return m
+
+
+@pytest.fixture
+def client():
+    return TestClient(m.app)
+
+
+def chat(client, prompt, **kwargs):
+    body = {
+        "model": "llama3.1",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    body.update(kwargs)
+    return client.post("/v1/chat/completions", json=body)
+
+
+class TestIntentRouting:
+    def test_code_prompt_routes_to_code_profile(self, client):
+        m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
+        r = chat(client, "write a function")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["intent"] == "code"
+        assert body["profile"] == "code"
+        # code profile pool puts deepseek_local first
+        assert body["provider"] == "deepseek_local"
+
+    def test_ambiguous_prompt_abstains_to_general(self, client):
+        m.semantic_cache.vectors = {"hmm": [1.0, 1.0, 0.0]}
+        body = chat(client, "hmm").json()
+        assert body["intent"] == "general"
+        assert body["profile"] == "general"
+        assert body["provider"] == "ollama"
+
+    def test_response_carries_decision_metadata(self, client):
+        body = chat(client, "write a function").json()
+        for field in (
+            "intent",
+            "intent_confidence",
+            "profile",
+            "policy_action",
+            "egress_class",
+            "route_target",
+        ):
+            assert field in body
+
+
+class TestCacheOrdering:
+    def test_exact_hit_does_not_embed(self, client):
+        m.semantic_cache.vectors = {"repeat me": [1.0, 0.0, 0.0]}
+        first = chat(client, "repeat me").json()
+        assert first["cache_hit"] is False
+        embeds_after_first = m.semantic_cache.embed_calls
+
+        second = chat(client, "repeat me").json()
+        assert second["cache_hit"] is True
+        assert second["cache_type"] == "exact"
+        # The whole point of keeping the exact cache in front of the embedder.
+        assert m.semantic_cache.embed_calls == embeds_after_first
+
+    def test_exact_hit_reports_stored_intent(self, client):
+        m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
+        chat(client, "write a function")
+        cached = chat(client, "write a function").json()
+        assert cached["cache_type"] == "exact"
+        # Without persisting intent this would be a guess, since an exact hit
+        # never computes an embedding.
+        assert cached["intent"] == "code"
+
+    def test_semantic_hit_when_exact_misses(self, client):
+        m.semantic_cache.vectors = {
+            "first phrasing": [0.5, 0.5, 0.5],
+            "second phrasing": [0.5, 0.5, 0.5],
+        }
+        chat(client, "first phrasing")
+        second = chat(client, "second phrasing").json()
+        assert second["cache_hit"] is True
+        assert second["cache_type"] == "semantic"
+
+    def test_signature_prevents_cross_model_reuse(self, client):
+        m.semantic_cache.vectors = {"same text": [0.3, 0.3, 0.3]}
+        chat(client, "same text", model="llama3.1")
+        other = chat(client, "same text", model="mistral").json()
+        # Same vector, different model: must not serve the cached answer.
+        assert other["cache_hit"] is False
+
+    def test_bypass_header_skips_cache(self, client):
+        chat(client, "repeat me")
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "llama3.1", "messages": [{"role": "user", "content": "repeat me"}]},
+            headers={"X-KubeMind-Cache": "bypass"},
+        )
+        assert r.json()["cache_hit"] is False
+
+
+class TestPolicyEnforcement:
+    def test_secret_is_blocked_before_dispatch(self, client):
+        r = chat(client, f"deploy this key {PRIVATE_KEY}")
+        assert r.status_code == 403
+        assert r.json()["detail"]["error"] == "blocked_by_policy"
+        # Nothing reached a provider.
+        assert all(p.calls == 0 for p in m.registry.providers.values())
+
+    def test_pii_forces_local_provider(self, client):
+        m.semantic_cache.vectors = {"contact bob@example.com": [0.0, 0.0, 1.0]}
+        body = chat(client, "contact bob@example.com").json()
+        assert body["policy_action"] == "local_only"
+        assert body["egress_class"] == "local_only"
+        assert m.registry.is_local(body["provider"])
+
+    def test_local_only_refuses_rather_than_leaking(self, client):
+        from router.providers.base import CircuitState
+
+        for name in ("ollama", "deepseek_local"):
+            m.registry.providers[name].circuit_state = CircuitState.OPEN
+            m.registry.providers[name].last_failure_time = 9e18
+        r = chat(client, "contact bob@example.com")
+        assert r.status_code == 503
+        assert m.registry.providers["groq"].calls == 0
+
+    def test_sensitive_prompt_is_not_cached(self, client):
+        chat(client, "contact bob@example.com")
+        second = chat(client, "contact bob@example.com").json()
+        assert second["cache_hit"] is False
+
+    def test_policy_runs_before_classification(self, client):
+        """A blocked prompt must not depend on the classifier having an opinion."""
+        m.classifier.is_ready = False
+        r = chat(client, f"here {PRIVATE_KEY}")
+        assert r.status_code == 403
+
+
+class TestFallback:
+    def test_failure_walks_the_chain(self, client):
+        m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
+        m.registry.providers["deepseek_local"].should_fail = True
+        body = chat(client, "write a function").json()
+        assert body["provider"] == "ollama"
+        assert body["fallback"] is True
+
+    def test_all_providers_failing_returns_502(self, client):
+        for p in m.registry.providers.values():
+            p.should_fail = True
+        assert chat(client, "anything").status_code == 502
+
+
+class TestStreaming:
+    def test_stream_is_refused_not_silently_ignored(self, client):
+        r = chat(client, "hello", stream=True)
+        assert r.status_code == 400
+        assert "stream" in r.json()["detail"].lower()
+
+
+class TestRetrieval:
+    def test_retrieval_intent_augments_from_mind(self, client, monkeypatch):
+        class StubMind:
+            enabled = True
+
+            async def query(self, q, ws, top_k=4):
+                return [{"content": "Expenses are reimbursed monthly.", "source": "handbook"}]
+
+            def format_context(self, results):
+                return "CONTEXT: " + results[0]["content"]
+
+        monkeypatch.setattr(m, "mind_client", StubMind())
+        m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
+        body = chat(client, "what does the handbook say").json()
+        assert body["intent"] == "rag"
+        assert body["retrieval_used"] is True
+
+        # The retrieved context reached the provider as a system message.
+        sent = m.registry.providers["ollama"].last_request
+        assert any("CONTEXT:" in msg.content for msg in sent.messages)
+
+    def test_retrieval_failure_is_not_fatal(self, client, monkeypatch):
+        class BrokenMind:
+            enabled = True
+
+            async def query(self, q, ws, top_k=4):
+                return []
+
+            def format_context(self, results):
+                return ""
+
+        monkeypatch.setattr(m, "mind_client", BrokenMind())
+        m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
+        body = chat(client, "what does the handbook say").json()
+        assert body["retrieval_used"] is False
+        assert body["intent"] == "rag"
+
+
+class TestObservability:
+    def test_routing_report_counts_cache_hits_as_free(self, client):
+        m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
+        chat(client, "write a function")
+        chat(client, "write a function")
+
+        report = client.get("/v1/routing/report").json()
+        code = report["intents"]["code"]
+        assert code["requests"] == 2
+        assert code["cache_hits"] == 1
+        # One completion was actually paid for, not two.
+        assert code["billable_requests"] == 1
+
+    def test_prometheus_endpoint_renders(self, client):
+        chat(client, "write a function")
+        body = client.get("/metrics").text
+        assert "kubemind_router_intent_requests_total" in body
+        assert "kubemind_router_policy_actions_total" in body
+
+    def test_classify_endpoint_is_a_dry_run(self, client):
+        m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
+        body = client.post("/v1/classify", json={"prompt": "write a function"}).json()
+        assert body["intent"] == "code"
+        assert body["profile"] == "code"
+        assert "policy_action" in body
+        # No provider was called.
+        assert all(p.calls == 0 for p in m.registry.providers.values())
+
+    def test_intents_endpoint_lists_wiring(self, client):
+        body = client.get("/v1/intents").json()
+        names = {i["name"] for i in body["intents"]}
+        assert {"code", "rag"} <= names
+
+
+class TestAuth:
+    def test_open_mode_trusts_header(self, client):
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "llama3.1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"X-Workspace-ID": "team-a"},
+        )
+        assert r.status_code == 200
+
+    def test_key_binds_workspace(self, client, monkeypatch):
+        monkeypatch.setattr(m, "authenticator", Authenticator({"secret-key": "acme"}))
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "llama3.1", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 401
+
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "llama3.1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"X-API-Key": "secret-key"},
+        )
+        assert r.status_code == 200
+
+    def test_header_cannot_redirect_to_another_workspace(self, client, monkeypatch):
+        monkeypatch.setattr(m, "authenticator", Authenticator({"secret-key": "acme"}))
+        r = client.post(
+            "/v1/chat/completions",
+            json={"model": "llama3.1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"X-API-Key": "secret-key", "X-Workspace-ID": "victim"},
+        )
+        assert r.status_code == 403
+
+    def test_cache_clear_requires_admin(self, client):
+        assert client.post("/v1/cache/clear").status_code == 403
