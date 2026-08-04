@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="swiss-editorial" data-font="cabinet">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tricore — Editorial & Graphic Customizer</title>
+
+  <!-- Curated High-End Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Syne:wght@700;800;900&family=Cabinet+Grotesk:wght@800;900&family=Familjen+Grotesk:wght@400;600;700&family=Space+Mono&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── Non-Generic Design Palettes ───────────────────── */
+    
+    /* Theme 1: Swiss International Editorial (Monochrome Stark Warm Cream + Ink Black) */
+    [data-theme="swiss-editorial"] {
+      --bg-body: #F4F1EA;
+      --bg-card: #EBE6DC;
+      --border-color: #111111;
+      --text-main: #111111;
+      --text-muted: #666055;
+      --accent-color: #E63946; /* International Red accent dot */
+      --btn-bg: #111111;
+      --btn-text: #F4F1EA;
+      --card-radius: 0px;
+    }
+
+    /* Theme 2: Brutalist Raw Concrete & Vivid Tangerine */
+    [data-theme="brutalist-tangerine"] {
+      --bg-body: #E5E7EB;
+      --bg-card: #FFFFFF;
+      --border-color: #000000;
+      --text-main: #000000;
+      --text-muted: #4B5563;
+      --accent-color: #FF5500;
+      --btn-bg: #FF5500;
+      --btn-text: #000000;
+      --card-radius: 0px;
+    }
+
+    /* Theme 3: Deep Warm Espresso & Butter Yellow */
+    [data-theme="warm-espresso"] {
+      --bg-body: #1C1917;
+      --bg-card: #292524;
+      --border-color: #44403C;
+      --text-main: #FAFAF9;
+      --text-muted: #A8A29E;
+      --accent-color: #FACC15;
+      --btn-bg: #FACC15;
+      --btn-text: #1C1917;
+      --card-radius: 12px;
+    }
+
+    /* Theme 4: High-Contrast Monospaced Terminal */
+    [data-theme="raw-terminal"] {
+      --bg-body: #0D1117;
+      --bg-card: #161B22;
+      --border-color: #30363D;
+      --text-main: #58A6FF;
+      --text-muted: #8B949E;
+      --accent-color: #39D353;
+      --btn-bg: #238636;
+      --btn-text: #FFFFFF;
+      --card-radius: 6px;
+    }
+
+    /* Font Variations */
+    [data-font="cabinet"] { --font-heading: 'Cabinet Grotesk', sans-serif; --font-body: 'Familjen Grotesk', sans-serif; }
+    [data-font="syne"] { --font-heading: 'Syne', sans-serif; --font-body: 'Familjen Grotesk', sans-serif; }
+    [data-font="serif"] { --font-heading: 'Instrument Serif', serif; --font-body: 'Familjen Grotesk', sans-serif; }
+    [data-font="mono"] { --font-heading: 'Space Mono', monospace; --font-body: 'Space Mono', monospace; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      transition: all 0.25s ease;
+    }
+
+    /* Floating Toolbar */
+    .control-panel {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      padding: 12px 20px;
+      border-radius: var(--card-radius);
+      box-shadow: 6px 6px 0px var(--border-color);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .control-group label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 800;
+    }
+
+    .control-group select {
+      background: var(--bg-body);
+      color: var(--text-main);
+      border: 1.5px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: var(--card-radius);
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 80px 24px 140px;
+    }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 24px;
+      border-bottom: 2px solid var(--border-color);
+      margin-bottom: 60px;
+    }
+
+    .brand {
+      font-family: var(--font-heading);
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .badge-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: var(--accent-color);
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    h1.hero-title {
+      font-family: var(--font-heading);
+      font-size: 72px;
+      font-weight: 900;
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+      margin-bottom: 32px;
+      text-transform: uppercase;
+    }
+
+    p.lead {
+      font-size: 20px;
+      line-height: 1.5;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin-bottom: 40px;
+    }
+
+    .cta-button {
+      background: var(--btn-bg);
+      color: var(--btn-text);
+      font-family: var(--font-heading);
+      font-size: 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 16px 36px;
+      border: 2px solid var(--border-color);
+      border-radius: var(--card-radius);
+      cursor: pointer;
+      box-shadow: 4px 4px 0px var(--border-color);
+      transition: all 0.15s ease;
+    }
+
+    .cta-button:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 6px 6px 0px var(--border-color);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+      margin-top: 80px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 28px;
+      box-shadow: 4px 4px 0px var(--border-color);
+    }
+
+    .card-num {
+      font-family: var(--font-heading);
+      font-size: 14px;
+      font-weight: 900;
+      color: var(--accent-color);
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-family: var(--font-heading);
+      font-size: 22px;
+      font-weight: 900;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .card-text {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating Customizer Control Panel -->
+  <div class="control-panel">
+    <div class="control-group">
+      <label for="themeSelect">Design Aesthetics</label>
+      <select id="themeSelect" onchange="changeTheme(this.value)">
+        <option value="swiss-editorial">1. Swiss Editorial (Cream & Ink Black)</option>
+        <option value="brutalist-tangerine">2. Brutalist Concrete & Vivid Tangerine</option>
+        <option value="warm-espresso">3. Warm Espresso & Butter Yellow</option>
+        <option value="raw-terminal">4. Raw Developer Terminal</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="fontSelect">Distinctive Typography</label>
+      <select id="fontSelect" onchange="changeFont(this.value)">
+        <option value="cabinet">Cabinet Grotesk (High-Fashion Sans)</option>
+        <option value="syne">Syne (Ultra-Wide Geometric Display)</option>
+        <option value="serif">Instrument Serif (Elegant Editorial)</option>
+        <option value="mono">Space Mono (Architectural Code)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="header-bar">
+      <div class="brand">TRICORE<span style="color: var(--accent-color)">.</span></div>
+      <div style="font-size: 13px; font-weight: 700;">
+        <span class="badge-dot"></span>0.1.0 SELF-HOSTED CORE
+      </div>
+    </div>
+
+    <main>
+      <h1 class="hero-title">
+        The Autonomous <br />
+        Engine Core<span style="color: var(--accent-color)">.</span>
+      </h1>
+
+      <p class="lead">
+        A unified, self-hosted microservice runtime for LLM caching, hybrid graph memory, autonomous tool execution, and real-time telemetry. Built for engineers who demand ownership.
+      </p>
+
+      <button class="cta-button">Deploy Microservices</button>
+    </main>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-num">01 / GATEWAY</div>
+        <div class="card-title">ROUTER</div>
+        <div class="card-text">Multi-provider model failover, Redis prompt deduplication caching under 10ms.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-num">02 / KNOWLEDGE</div>
+        <div class="card-title">MIND</div>
+        <div class="card-text">Hybrid vector similarity & BM25 keyword graph search stored in PostgreSQL.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-num">03 / EXECUTION</div>
+        <div class="card-title">AGENTS</div>
+        <div class="card-text">Multi-step autonomous task planner armed with 7 sandboxed execution tools.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-num">04 / TRACING</div>
+        <div class="card-title">SENTINEL</div>
+        <div class="card-text">Distributed span collector with live WebSocket telemetry event streaming.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function changeTheme(themeName) {
+      document.documentElement.setAttribute('data-theme', themeName);
+    }
+    function changeFont(fontName) {
+      document.documentElement.setAttribute('data-font', fontName);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+database:
+  url: "${DATABASE_URL}"
+
+embeddings:
+  provider: ollama
+  base_url: "${OLLAMA_BASE_URL}"
+  model: "nomic-embed-text"
+  dimensions: 768
+
+chunking:
+  max_tokens: 512
+  overlap_tokens: 64
+  strategy: recursive_character
+
+search:
+  vector_weight: 0.5
+  keyword_weight: 0.3
+  graph_weight: 0.2
+  top_k: 10
+
+vector_backend: pgvector
+
+connectors:
+  web:
+    enabled: true
+    timeout_seconds: 30
+    user_agent: "KubeMindBot/0.1"
+  documents:
+    enabled: true
+    supported: [pdf, docx, txt, md]
+    max_size_mb: 50
+  git:
+    enabled: true
+    extract_commits: true
+    extract_structure: true
+  mcp:
+    enabled: false
+    servers: []
+
+node_types:
+  document:
+    schema: [title, source_url, content, checksum, created_at]
+  code:
+    schema: [repo, path, language, content, commit_sha, created_at]
+  conversation:
+    schema: [agent_id, mission_id, turn_index, content, created_at]
+  agent_memory:
+    schema: [agent_id, key, value, timestamp, created_at]
+  plan:
+    schema: [mission_id, todos, status, created_at]

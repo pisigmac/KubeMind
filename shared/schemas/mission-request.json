@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/mission-request.json",
+  "title": "MissionRequest",
+  "description": "POST /v1/missions body (agents)",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "agents",
+  "type": "object",
+  "required": ["prompt"],
+  "properties": {
+    "prompt": { "type": "string" },
+    "mode": {
+      "type": "string",
+      "enum": ["sync", "async"],
+      "default": "sync"
+    },
+    "model": { "type": ["string", "null"] },
+    "tools": {
+      "type": ["array", "null"],
+      "items": { "type": "string" }
+    },
+    "max_steps": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 100,
+      "default": 20
+    }
+  },
+  "additionalProperties": false
+}

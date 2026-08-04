@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tracer
+  namespace: tricore
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tracer
+  template:
+    metadata:
+      labels:
+        app: tracer
+    spec:
+      containers:
+        - name: tracer
+          image: pisigmac/tricore-tracer:latest
+          ports:
+            - containerPort: 8083
+          envFrom:
+            - configMapRef:
+                name: tricore-config
+          volumeMounts:
+            - name: tracer-data
+              mountPath: /app/data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+      volumes:
+        - name: tracer-data
+          persistentVolumeClaim:
+            claimName: tracer-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tracer
+  namespace: tricore
+spec:
+  selector:
+    app: tracer
+  ports:
+    - port: 8083
+      targetPort: 8083
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tracer-pvc
+  namespace: tricore
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

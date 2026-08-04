@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/memory-query-request.json",
+  "title": "MemoryQueryRequest",
+  "description": "POST /v1/memory/query body (mind) — planned Phase 2 alias of QueryRequest",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "mind",
+  "x-kubemind-phase": 2,
+  "type": "object",
+  "required": ["query"],
+  "properties": {
+    "query": { "type": "string" },
+    "filters": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" }
+    },
+    "top_k": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 100,
+      "default": 10
+    }
+  },
+  "additionalProperties": false
+}

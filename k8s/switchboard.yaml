@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: switchboard
+  namespace: tricore
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: switchboard
+  template:
+    metadata:
+      labels:
+        app: switchboard
+    spec:
+      containers:
+        - name: switchboard
+          image: pisigmac/tricore-switchboard:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: tricore-config
+            - secretRef:
+                name: tricore-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: switchboard
+  namespace: tricore
+spec:
+  selector:
+    app: switchboard
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: switchboard-hpa
+  namespace: tricore
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: switchboard
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

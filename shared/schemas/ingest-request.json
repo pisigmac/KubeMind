@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/ingest-request.json",
+  "title": "IngestRequest",
+  "description": "POST /v1/ingest body (mind)",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "mind",
+  "type": "object",
+  "required": ["source"],
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "URL, file path, directory path, or logical name when content is provided"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["document", "code", "conversation", "agent_memory", "plan"],
+      "default": "document"
+    },
+    "content": {
+      "type": ["string", "null"],
+      "description": "Optional direct text content"
+    }
+  },
+  "additionalProperties": false
+}

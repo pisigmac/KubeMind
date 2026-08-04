@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/embeddings-request.json",
+  "title": "EmbeddingsRequest",
+  "description": "POST /v1/embeddings body (router)",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "router",
+  "type": "object",
+  "required": ["model", "input"],
+  "properties": {
+    "model": { "type": "string" },
+    "input": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ]
+    },
+    "encoding_format": { "type": ["string", "null"] },
+    "dimensions": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": true
+}

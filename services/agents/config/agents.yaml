@@ -1,0 +1,28 @@
+engine:
+  default_model: "llama3.1"
+  max_todos: 20
+  subagent_depth: 3
+  timeout_seconds: 300
+
+tools:
+  enabled: [filesystem, shell, web_search, code_analyzer, knowledge]
+  filesystem:
+    base_path: "/tmp/tricore"
+    allowed_extensions: [".txt", ".md", ".py", ".js", ".ts", ".json", ".yaml"]
+  shell:
+    allowed_commands: ["python", "node", "git", "curl", "cat", "ls", "grep", "find"]
+    blocked_patterns: ["rm -rf /", "> /dev/null", "| sh", "| bash"]
+    timeout_seconds: 30
+  web_search:
+    max_results: 5
+  code_analyzer:
+    languages: [python, javascript, typescript, go]
+
+memory:
+  retention_turns: 10
+  auto_ingest_conversations: true
+
+services:
+  switchboard_url: "${SWITCHBOARD_URL}"
+  contextweave_url: "${CONTEXTWEAVE_URL}"
+  beacon_trace_url: "${BEACON_TRACE_URL}"

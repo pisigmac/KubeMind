@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: contextweave
+  namespace: tricore
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: contextweave
+  template:
+    metadata:
+      labels:
+        app: contextweave
+    spec:
+      containers:
+        - name: contextweave
+          image: pisigmac/tricore-contextweave:latest
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: tricore-config
+            - secretRef:
+                name: tricore-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: contextweave
+  namespace: tricore
+spec:
+  selector:
+    app: contextweave
+  ports:
+    - port: 8081
+      targetPort: 8081
