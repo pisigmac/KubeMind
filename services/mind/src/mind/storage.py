@@ -77,23 +77,31 @@ class KnowledgeStore:
         self.pgvector_enabled = False
         self.embed_dim = EMBED_DIM
 
-    async def init(self):
-        db_url = os.environ.get(
+    async def init(self, db_url: Optional[str] = None):
+        db_url = db_url or os.environ.get(
             "DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore"
         )
-        async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
+        sqlite = db_url.startswith("sqlite")
+        if sqlite:
+            async_url = db_url if "+aiosqlite" in db_url else db_url.replace(
+                "sqlite://", "sqlite+aiosqlite://", 1
+            )
+        else:
+            async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
 
         self.engine = create_async_engine(async_url, echo=False)
 
         async with self.engine.begin() as conn:
-            # Extension first
-            try:
-                await conn.execute(sql_text("CREATE EXTENSION IF NOT EXISTS vector"))
-                self.pgvector_enabled = _HAS_PGVECTOR_LIB
-                print("[mind] pgvector extension enabled")
-            except Exception as e:
+            if sqlite:
                 self.pgvector_enabled = False
-                print(f"[mind] pgvector not available: {e}. Using JSON embeddings.")
+            else:
+                try:
+                    await conn.execute(sql_text("CREATE EXTENSION IF NOT EXISTS vector"))
+                    self.pgvector_enabled = _HAS_PGVECTOR_LIB
+                    print("[mind] pgvector extension enabled")
+                except Exception as e:
+                    self.pgvector_enabled = False
+                    print(f"[mind] pgvector not available: {e}. Using JSON embeddings.")
 
             await conn.run_sync(Base.metadata.create_all)
 
