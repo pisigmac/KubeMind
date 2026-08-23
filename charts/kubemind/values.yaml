@@ -76,3 +76,21 @@ ingress:
 
 service:
   type: ClusterIP
+
+# Enterprise Cloud KMS Credentials
+kms:
+  provider: "" # vault | aws | gcp
+  vault:
+    addr: ""
+    k8sRole: "kubemind-router"
+  aws:
+    region: "us-east-1"
+  gcp:
+    projectId: ""
+
+# Observability Integration
+observability:
+  prometheusRule:
+    enabled: false
+  grafanaDashboard:
+    enabled: false
