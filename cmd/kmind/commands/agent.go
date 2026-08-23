@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/internal"
 )
 
 type MissionRequest struct {

@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/internal"
 )
 
 func Init(cfg *internal.Config) {

@@ -4,11 +4,12 @@ from typing import Dict, List, Optional, Any, Sequence
 
 from router.providers.base import BaseProvider
 from router.providers.keymint_managed import KeyMintManagedProvider
+from router.providers.mock import MockLocalProvider
 from router.providers.ollama import OllamaProvider
 from router.providers.openai_compat import OpenAICompatibleProvider
 
 # Providers that do not require an API key when base_url is set
-LOCAL_PROVIDER_TYPES = {"ollama", "vllm", "deepseek_local"}
+LOCAL_PROVIDER_TYPES = {"ollama", "vllm", "deepseek_local", "mock", "mock-local", "local_dev"}
 
 
 class NoEligibleProvider(Exception):
@@ -80,7 +81,9 @@ class ProviderRegistry:
                         print(f"[router] Skipping provider {name}: no base_url")
                         continue
 
-            if name == "ollama" or (
+            if name in {"mock", "mock-local", "local_dev"} or resolved.get("type") == "mock":
+                self.providers[name] = MockLocalProvider(name, resolved)
+            elif name == "ollama" or (
                 is_local and "ollama" in (resolved.get("base_url") or "")
             ):
                 # Prefer Ollama native API when name is ollama

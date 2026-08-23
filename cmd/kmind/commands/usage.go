@@ -14,6 +14,9 @@ Commands:
   status            Check health of all services
   logs [service]    Tail logs for a service
 
+  analytics [hours] Show CFO-level token usage and spend breakdown (default: 24h)
+  verify            Cryptographically verify the Sentinel SHA-256 audit ledger
+
   agent run "<prompt>"     Run a one-shot mission
   agent repl               Interactive agent session
   agent list               List active missions

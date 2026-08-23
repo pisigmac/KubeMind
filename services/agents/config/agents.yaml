@@ -23,6 +23,6 @@ memory:
   auto_ingest_conversations: true
 
 services:
-  switchboard_url: "${SWITCHBOARD_URL}"
-  contextweave_url: "${CONTEXTWEAVE_URL}"
-  beacon_trace_url: "${BEACON_TRACE_URL}"
+  router_url: "${ROUTER_URL}"
+  mind_url: "${MIND_URL}"
+  sentinel_url: "${SENTINEL_URL}"

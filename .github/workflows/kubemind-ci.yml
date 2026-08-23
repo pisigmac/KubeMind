@@ -18,21 +18,60 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-      - uses: actions/setup-go@v5
+          
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          go-version-file: cmd/tricore/go.mod
-          cache-dependency-path: cmd/tricore/go.sum
-      - uses: actions/setup-node@v4
+          go-version-file: cmd/kmind/go.mod
+          cache-dependency-path: cmd/kmind/go.sum
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: dashboard/package-lock.json
-      - run: python -m pip install --requirement requirements-dev.txt
-      - run: python -m pip install --requirement services/router/requirements.txt --requirement services/mind/requirements.txt --requirement services/agents/requirements.txt --requirement services/sentinel/requirements.txt
-      - run: npm ci
-        working-directory: dashboard
-      - run: make ci
+          
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip install -e shared/python/kubemind_auth
+          python -m pip install -e shared/python/kubemind_policy
+          python -m pip install --requirement services/router/requirements.txt
+          python -m pip install --requirement services/mind/requirements.txt
+          python -m pip install --requirement services/agents/requirements.txt
+          python -m pip install --requirement services/sentinel/requirements.txt
+          
+      - name: Run Backend Tests
+        run: make test
+        
+      - name: Build TypeScript SDK
+        run: |
+          cd sdk/typescript
+          npm install
+          npm run build
+          
+      - name: Validate Python SDK Package
+        run: |
+          cd sdk/python
+          python3 -m build --sdist --wheel .
+          
+      - name: Build Dashboard
+        run: |
+          cd dashboard
+          npm install
+          npm run build
+          
+      - name: Build Marketing Landing
+        run: |
+          cd landing_8
+          npm install
+          npm run build
+          
+      - name: Compile kmind CLI
+        run: make cli

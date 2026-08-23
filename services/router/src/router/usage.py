@@ -1,6 +1,6 @@
 import os
-from datetime import datetime
-from typing import Dict, Any
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
 
 from sqlalchemy import Column, String, Integer, Float, DateTime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -36,7 +36,7 @@ class UsageTracker:
             await conn.run_sync(Base.metadata.create_all)
 
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
-        print("[SwitchBoard] Usage tracker initialized")
+        print("[KubeMind Router] Usage tracker initialized")
 
     async def record(self, workspace_id: str, provider: str, model: str, usage: Dict[str, int]):
         if not self.session_maker:
@@ -46,8 +46,10 @@ class UsageTracker:
         completion_tokens = usage.get("completion_tokens", 0)
         total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
 
-        # Rough cost calculation
-        cost = (total_tokens * 0.0000015)  # Conservative estimate
+        # Cost calculation based on rough market rates
+        is_free = provider in ("ollama", "mock", "mock-local", "local_dev", "deepseek_local", "vllm")
+        rate_per_token = 0.0 if is_free else 0.000002
+        cost = total_tokens * rate_per_token
 
         async with self.session_maker() as session:
             record = UsageRecord(
@@ -98,6 +100,91 @@ class UsageTracker:
                 "total_tokens": row.total_tokens,
                 "estimated_cost": row.estimated_cost,
                 "providers": providers,
+            }
+
+    async def get_analytics(self, workspace_id: str, window_hours: int = 24) -> Dict[str, Any]:
+        """Aggregate CFO-level financial and usage analytics for a workspace."""
+        if not self.session_maker:
+            return {
+                "workspace_id": workspace_id,
+                "window_hours": window_hours,
+                "total_requests": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_spend_usd": 0.0,
+                "providers": {},
+                "models": {},
+            }
+
+        since = datetime.utcnow() - timedelta(hours=window_hours)
+        async with self.session_maker() as session:
+            from sqlalchemy import func, select
+
+            # Overall aggregate
+            stmt = select(
+                func.count().label("total_requests"),
+                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0).label("prompt_tokens"),
+                func.coalesce(func.sum(UsageRecord.completion_tokens), 0).label("completion_tokens"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("estimated_spend_usd"),
+            ).where(
+                UsageRecord.workspace_id == workspace_id,
+                UsageRecord.created_at >= since,
+            )
+            res = await session.execute(stmt)
+            row = res.one()
+
+            # Provider breakdown
+            p_stmt = select(
+                UsageRecord.provider,
+                func.count().label("requests"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("spend_usd"),
+            ).where(
+                UsageRecord.workspace_id == workspace_id,
+                UsageRecord.created_at >= since,
+            ).group_by(UsageRecord.provider)
+            p_res = await session.execute(p_stmt)
+            providers = {
+                r.provider: {
+                    "requests": r.requests,
+                    "tokens": r.tokens,
+                    "spend_usd": round(r.spend_usd, 6),
+                }
+                for r in p_res.all()
+            }
+
+            # Model breakdown
+            m_stmt = select(
+                UsageRecord.model,
+                func.count().label("requests"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("spend_usd"),
+            ).where(
+                UsageRecord.workspace_id == workspace_id,
+                UsageRecord.created_at >= since,
+            ).group_by(UsageRecord.model)
+            m_res = await session.execute(m_stmt)
+            models = {
+                r.model: {
+                    "requests": r.requests,
+                    "tokens": r.tokens,
+                    "spend_usd": round(r.spend_usd, 6),
+                }
+                for r in m_res.all()
+            }
+
+            return {
+                "workspace_id": workspace_id,
+                "window_hours": window_hours,
+                "total_requests": row.total_requests,
+                "prompt_tokens": row.prompt_tokens,
+                "completion_tokens": row.completion_tokens,
+                "total_tokens": row.total_tokens,
+                "estimated_spend_usd": round(row.estimated_spend_usd, 6),
+                "providers": providers,
+                "models": models,
             }
 
     async def close(self):

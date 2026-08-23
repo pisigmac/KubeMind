@@ -66,7 +66,7 @@ export default function GatewayPage() {
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0066FF]/10 border border-[#0066FF]/30 text-[#0066FF] text-xs font-mono font-bold">
             <Network className="w-3.5 h-3.5" />
-            <span>SwitchBoard LLM Router Proxy</span>
+            <span>KubeMind Router Proxy</span>
           </div>
           <h1 className="text-3xl font-black text-white tracking-tight">Gateway Router Console</h1>
           <p className="text-slate-400 text-sm max-w-xl">

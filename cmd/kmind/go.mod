@@ -1,4 +1,4 @@
-module github.com/pisigmac/tricore
+module github.com/kubemind/kmind
 
 go 1.22
 

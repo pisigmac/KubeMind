@@ -23,6 +23,7 @@ export const routerApi = {
   health: () => apiFetch("/api/router/health"),
   providers: () => apiFetch("/api/router/v1/providers/health"),
   usage: () => apiFetch("/api/router/v1/usage"),
+  analytics: (windowHours = 24) => apiFetch(`/api/router/v1/usage/analytics?window_hours=${windowHours}`),
   cacheStats: () => apiFetch("/api/router/v1/cache/stats"),
 };
 
@@ -60,4 +61,7 @@ export const sentinelApi = {
   metrics: (workspace = "default", hours = 24) =>
     apiFetch(`/api/sentinel/v1/metrics?workspace_id=${workspace}&hours=${hours}`),
   stats: () => apiFetch("/api/sentinel/v1/stats"),
+  verifyAudit: (workspace = "default", limit = 50) =>
+    apiFetch(`/api/sentinel/v1/audit/verify?workspace_id=${workspace}&limit=${limit}`),
 };
+

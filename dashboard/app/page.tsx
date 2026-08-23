@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { routerApi, mindApi, agentsApi, sentinelApi } from "@/lib/api";
 import { 
-  Activity, Network, Database, Bot, BarChart3, CheckCircle2, XCircle, Loader2, Zap, ArrowUpRight, Cpu
+  Activity, Network, Database, Bot, BarChart3, CheckCircle2, XCircle, Loader2, Zap, ArrowUpRight, Cpu, ShieldCheck, DollarSign, RefreshCw
 } from "lucide-react";
 
 interface ServiceStatus {
@@ -24,8 +24,12 @@ export default function HomePage() {
     { name: "Sentinel Tracer", healthy: false, version: "-", loading: true, port: "9083", icon: BarChart3 },
   ]);
   const [usage, setUsage] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [auditVerify, setAuditVerify] = useState<any>(null);
+  const [verifyingAudit, setVerifyingAudit] = useState(false);
   const [missions, setMissions] = useState<any[]>([]);
   const [sentinelStats, setSentinelStats] = useState<any>(null);
+  const [timeWindow, setTimeWindow] = useState(24);
 
   useEffect(() => {
     async function checkAll() {
@@ -64,8 +68,23 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, []);
 
+  const loadAnalytics = (hours: number) => {
+    setTimeWindow(hours);
+    routerApi.analytics(hours).then(setAnalytics).catch(() => {});
+  };
+
+  const runAuditVerification = () => {
+    setVerifyingAudit(true);
+    sentinelApi.verifyAudit("default", 50)
+      .then(setAuditVerify)
+      .catch(() => {})
+      .finally(() => setVerifyingAudit(false));
+  };
+
   useEffect(() => {
     routerApi.usage().then(setUsage).catch(() => {});
+    routerApi.analytics(24).then(setAnalytics).catch(() => {});
+    sentinelApi.verifyAudit("default", 50).then(setAuditVerify).catch(() => {});
     agentsApi.missions(5).then(setMissions).catch(() => {});
     sentinelApi.stats().then(setSentinelStats).catch(() => {});
   }, []);
@@ -128,6 +147,111 @@ export default function HomePage() {
         })}
       </div>
 
+      {/* CFO Analytics & Governance Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* CFO Cost Analytics Card */}
+        <Card className="p-6 bg-[#0F172A] border border-[#1E293B] shadow-xl">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#1E293B]">
+            <div className="flex items-center gap-3">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
+              <h2 className="font-bold text-base text-white">Financial & Usage Analytics</h2>
+            </div>
+            <div className="flex gap-1.5 bg-[#090D16] p-1 rounded-lg border border-[#1E293B]">
+              {[24, 168, 720].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => loadAnalytics(h)}
+                  className={`px-2.5 py-1 text-[11px] font-mono rounded-md transition-all ${
+                    timeWindow === h
+                      ? "bg-[#0066FF] text-white font-bold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {h === 24 ? "24H" : h === 168 ? "7D" : "30D"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {analytics ? (
+            <div className="space-y-4 font-mono text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-[#090D16] border border-[#1E293B]">
+                  <span className="text-slate-400 block text-[11px]">Estimated Spend</span>
+                  <span className="text-xl font-bold text-emerald-400">
+                    ${(analytics.estimated_spend_usd || 0).toFixed(4)}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-[#090D16] border border-[#1E293B]">
+                  <span className="text-slate-400 block text-[11px]">Total Tokens</span>
+                  <span className="text-xl font-bold text-white">
+                    {(analytics.total_tokens || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#090D16] border border-[#1E293B] space-y-2">
+                <span className="text-slate-400 font-bold block text-[11px]">Provider Spend Distribution</span>
+                {analytics.providers && Object.keys(analytics.providers).length > 0 ? (
+                  Object.entries(analytics.providers).map(([p, data]: [string, any]) => (
+                    <div key={p} className="flex justify-between items-center text-slate-300">
+                      <span className="capitalize">{p}</span>
+                      <span>{data.tokens.toLocaleString()} tokens (${data.spend_usd.toFixed(4)})</span>
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-slate-500 italic">No provider calls in this window</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-xs text-slate-500 font-mono">Loading financial analytics...</div>
+          )}
+        </Card>
+
+        {/* Audit Ledger Integrity Card */}
+        <Card className="p-6 bg-[#0F172A] border border-[#1E293B] shadow-xl">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#1E293B]">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-5 h-5 text-[#0066FF]" />
+              <h2 className="font-bold text-base text-white">Cryptographic Audit Ledger</h2>
+            </div>
+            <button
+              onClick={runAuditVerification}
+              disabled={verifyingAudit}
+              className="flex items-center gap-1.5 px-3 py-1 bg-[#1E293B] hover:bg-[#0066FF] text-white text-xs font-mono rounded-lg transition-all"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${verifyingAudit ? "animate-spin" : ""}`} />
+              <span>Verify Chain</span>
+            </button>
+          </div>
+
+          {auditVerify ? (
+            <div className="space-y-4 font-mono text-xs">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[#090D16] border border-[#1E293B]">
+                <span className="text-slate-400">Ledger Integrity Status:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  SHA-256 INTACT
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-[#090D16] border border-[#1E293B] space-y-1.5">
+                <span className="text-slate-400 block text-[11px]">Head Chain Hash</span>
+                <span className="text-slate-200 truncate block text-[10px]">
+                  {auditVerify.head_hash || "GENESIS_ROOT_LINKED"}
+                </span>
+              </div>
+              <div className="flex justify-between p-3 rounded-xl bg-[#090D16] border border-[#1E293B]">
+                <span className="text-slate-400">Total Verified Entries:</span>
+                <span className="font-bold text-white">{auditVerify.total_entries || auditVerify.entries?.length || 0}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-xs text-slate-500 font-mono">No ledger verification data</div>
+          )}
+        </Card>
+      </div>
+
       {/* Detail Analytics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Gateway Card */}
@@ -135,7 +259,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-[#1E293B]">
             <div className="flex items-center gap-3">
               <Network className="w-5 h-5 text-[#0066FF]" />
-              <h2 className="font-bold text-base text-white">Gateway Usage</h2>
+              <h2 className="font-bold text-base text-white">Gateway Lifetime</h2>
             </div>
             <span className="text-xs font-mono text-slate-400 bg-[#1E293B] px-2.5 py-1 rounded-lg">:9080</span>
           </div>

@@ -49,6 +49,8 @@ class ChatResponse(BaseModel):
     policy_action: Optional[str] = None
     egress_class: Optional[str] = None
     retrieval_used: Optional[bool] = False
+    retrieval_status: Optional[str] = None
+    routing_decision: Optional[Dict[str, Any]] = None
     distance: Optional[float] = None
     similarity: Optional[float] = None
 
@@ -104,6 +106,8 @@ class RouteResponse(BaseModel):
     policy_action: Optional[str] = None
     egress_class: Optional[str] = None
     retrieval_used: bool = False
+    retrieval_status: Optional[str] = None
+    routing_decision: Optional[Dict[str, Any]] = None
     model: Optional[str] = None
     usage: Optional[Dict[str, int]] = None
     distance: Optional[float] = None

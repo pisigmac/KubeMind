@@ -5,7 +5,7 @@ import hashlib
 import json
 from datetime import datetime
 from contextlib import asynccontextmanager
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -395,12 +395,12 @@ async def _dispatch_chat(
             },
         )
 
+    active_token_map: Dict[str, str] = {}
     if verdict.redacted and verdict.text is not None:
-        req = req.model_copy(
-            update={
-                "messages": _redact_messages(req.messages, full_text, verdict.text)
-            }
+        redacted_messages, active_token_map = _redact_messages(
+            req.messages, full_text, verdict
         )
+        req = req.model_copy(update={"messages": redacted_messages})
 
     # ── 3) Embed once, then classify and look up the cache ───────
     classification_text = select_classification_text(
@@ -465,6 +465,7 @@ async def _dispatch_chat(
         cached = await cache.get(exact_key)
         if cached:
             latency_ms = (time.perf_counter() - t0) * 1000
+            record.route_reason_code = "CACHE_EXACT_HIT"
             out = _enrich(
                 dict(cached),
                 provider=cached.get("provider", "cache"),
@@ -479,13 +480,23 @@ async def _dispatch_chat(
                 policy_action=verdict.action.value,
                 egress_class=verdict.egress_class,
             )
+            out["routing_decision"] = {
+                "reason_code": record.route_reason_code,
+                "intent": record.intent,
+                "profile": record.profile,
+                "considered_providers": ["cache/exact"],
+                "eligible_providers": ["cache/exact"],
+                "selected_provider": "cache/exact",
+                "retrieval_status": None,
+                "retrieval_hits": 0,
+            }
             record.cache_hit = True
             record.cache_type = "exact"
             record.billable = False
             record.route_target = "cache/exact"
             record.latency_ms = latency_ms
             await _emit_decision(record)
-            return out
+            return _restore_response(out, active_token_map)
     sig = cache_signature(req.model, _system_prompt(req.messages), req.temperature or 0.7)
     partition = (
         intent_result.intent
@@ -505,6 +516,7 @@ async def _dispatch_chat(
         if hit:
             payload, distance, meta = hit
             latency_ms = (time.perf_counter() - t0) * 1000
+            record.route_reason_code = "CACHE_SEMANTIC_HIT"
             out = _enrich(
                 dict(payload),
                 provider=payload.get("provider", "cache"),
@@ -520,13 +532,24 @@ async def _dispatch_chat(
                 egress_class=verdict.egress_class,
                 distance=distance,
             )
+            out["routing_decision"] = {
+                "reason_code": record.route_reason_code,
+                "intent": record.intent,
+                "profile": record.profile,
+                "considered_providers": ["cache/semantic"],
+                "eligible_providers": ["cache/semantic"],
+                "selected_provider": "cache/semantic",
+                "retrieval_status": None,
+                "retrieval_hits": 0,
+                "distance": distance,
+            }
             record.cache_hit = True
             record.cache_type = "semantic"
             record.billable = False
             record.route_target = "cache/semantic"
             record.latency_ms = latency_ms
             await _emit_decision(record)
-            return out
+            return _restore_response(out, active_token_map)
 
     # ── 5) Retrieval augmentation ────────────────────────────────
     retrieval_used = False
@@ -727,7 +750,7 @@ async def _dispatch_chat(
         provider.name,
         used_fallback,
     )
-    return out
+    return _restore_response(out, active_token_map)
 
 
 async def _capture_feedback(
@@ -773,19 +796,46 @@ async def _capture_feedback(
 
 
 def _redact_messages(
-    messages: List[Message], original: str, redacted: str
-) -> List[Message]:
-    """Apply the policy's redaction to the user turns."""
-    from kubemind_policy import redact_string
+    messages: List[Message], full_text: str, verdict
+) -> Tuple[List[Message], Dict[str, str]]:
+    """Apply the policy's pseudonymization to user turns and capture the token mapping."""
+    from kubemind_policy import pseudonymize_string
 
     out: List[Message] = []
+    token_map: Dict[str, str] = dict(getattr(verdict, "token_map", {}) or {})
     for m in messages:
         if m.role == "user":
-            text, _ = redact_string(m.content)
+            text, m_map, _ = pseudonymize_string(m.content)
+            token_map.update(m_map)
             out.append(m.model_copy(update={"content": text}))
         else:
             out.append(m)
-    return out
+    return out, token_map
+
+
+def _restore_response(response: Any, token_map: Dict[str, str]) -> Any:
+    """Restore pseudonymized tokens in the LLM's generated response before returning to user."""
+    if not token_map or not response:
+        return response
+    from kubemind_policy import restore_string
+
+    if isinstance(response, dict):
+        resp_dict = dict(response)
+        if "choices" in resp_dict and isinstance(resp_dict["choices"], list):
+            new_choices = []
+            for choice in resp_dict["choices"]:
+                c = dict(choice)
+                if "message" in c and isinstance(c["message"], dict):
+                    msg = dict(c["message"])
+                    if "content" in msg and isinstance(msg["content"], str):
+                        msg["content"] = restore_string(msg["content"], token_map)
+                    c["message"] = msg
+                if "text" in c and isinstance(c["text"], str):
+                    c["text"] = restore_string(c["text"], token_map)
+                new_choices.append(c)
+            resp_dict["choices"] = new_choices
+        return resp_dict
+    return response
 
 
 def _prepend_context(messages: List[Message], context: str) -> List[Message]:
@@ -837,10 +887,23 @@ async def prometheus_metrics():
 async def chat_completions(
     req: ChatRequest, request: Request, auth=Depends(get_auth)
 ):
+    auth.assert_scope("chat")
     result = await _dispatch_chat(
         req, request, auth.workspace_id, authenticated=auth.authenticated
     )
-    return JSONResponse(content=result)
+    headers = {
+        "X-KubeMind-Trace-ID": str(result.get("id") or uuid.uuid4()),
+        "X-KubeMind-Intent": str(result.get("intent") or "default"),
+        "X-KubeMind-Provider": str(result.get("provider") or "unknown"),
+        "X-KubeMind-Policy-Action": str(result.get("policy_action") or "allow"),
+        "X-KubeMind-Cache-Hit": str(bool(result.get("cache_hit"))).lower(),
+        "X-KubeMind-Fallback-Used": str(bool(result.get("fallback"))).lower(),
+        "X-KubeMind-Latency-MS": str(round(float(result.get("latency_ms") or 0), 2)),
+    }
+    if result.get("retrieval_status"):
+        headers["X-KubeMind-Retrieval-Status"] = str(result.get("retrieval_status"))
+
+    return JSONResponse(content=result, headers=headers)
 
 
 @app.post("/v1/route", response_model=RouteResponse)
@@ -848,6 +911,7 @@ async def route_prompt(
     req: RouteRequest, request: Request, auth=Depends(get_auth)
 ):
     """Landing/SDK-oriented semantic route endpoint."""
+    auth.assert_scope("route")
     model = req.model or os.environ.get("DEFAULT_CHAT_MODEL", "llama3.1")
     chat_req = ChatRequest(
         model=model,
@@ -886,6 +950,8 @@ async def route_prompt(
         policy_action=result.get("policy_action"),
         egress_class=result.get("egress_class"),
         retrieval_used=bool(result.get("retrieval_used")),
+        retrieval_status=result.get("retrieval_status"),
+        routing_decision=result.get("routing_decision"),
         model=result.get("model") or model,
         usage=result.get("usage"),
         distance=result.get("distance"),
@@ -1061,6 +1127,7 @@ async def classify_prompt(payload: Dict[str, Any], auth=Depends(get_auth)):
 
 @app.get("/v1/usage")
 async def usage(request: Request, auth=Depends(get_auth)):
+    auth.assert_scope("usage:read")
     workspace_id = auth.workspace_id
     if not usage_tracker:
         return {
@@ -1070,6 +1137,27 @@ async def usage(request: Request, auth=Depends(get_auth)):
             "estimated_cost": 0.0,
         }
     return await usage_tracker.get_summary(workspace_id)
+
+
+@app.get("/v1/usage/analytics")
+@app.get("/v1/analytics/costs")
+async def usage_analytics(
+    window_hours: int = 24, auth=Depends(get_auth)
+):
+    """Aggregate CFO-level financial and usage analytics for a workspace."""
+    auth.assert_scope("usage:read")
+    workspace_id = auth.workspace_id
+    if not usage_tracker:
+        return {
+            "workspace_id": workspace_id,
+            "window_hours": window_hours,
+            "total_requests": 0,
+            "total_tokens": 0,
+            "estimated_spend_usd": 0.0,
+            "providers": {},
+            "models": {},
+        }
+    return await usage_tracker.get_analytics(workspace_id, window_hours=window_hours)
 
 
 @app.get("/v1/routing/report")

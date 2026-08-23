@@ -1,0 +1,30 @@
+{
+  "name": "@kubemind/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript/Node.js client SDK for KubeMind AI Gateway and Governance Control Plane",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "kubemind",
+    "ai-gateway",
+    "llm-router",
+    "governance",
+    "audit-ledger",
+    "typescript"
+  ],
+  "author": "KubeMind Team",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -120,6 +120,7 @@ app.add_middleware(
 )
 
 authenticator = Authenticator.from_config()
+authenticator.assert_production_safe("sentinel")
 print(authenticator.startup_banner("sentinel"))
 
 

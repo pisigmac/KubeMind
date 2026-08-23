@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/internal"
 )
 
 func Logs(cfg *internal.Config, args []string) {

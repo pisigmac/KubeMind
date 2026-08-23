@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/internal"
 )
 
 func Trace(cfg *internal.Config, args []string) {

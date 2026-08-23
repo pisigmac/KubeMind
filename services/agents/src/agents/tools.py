@@ -230,7 +230,7 @@ class KnowledgeTool(BaseTool):
     }
 
     async def run(self, arguments: Dict, workspace_id: str) -> Any:
-        cw_url = os.environ.get("MIND_URL", os.environ.get("CONTEXTWEAVE_URL", "http://mind:8081"))
+        cw_url = os.environ.get("MIND_URL", "http://mind:9081")
 
         try:
             async with httpx.AsyncClient() as client:

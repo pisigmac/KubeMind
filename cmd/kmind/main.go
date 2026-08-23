@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pisigmac/tricore/commands"
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/commands"
+	"github.com/kubemind/kmind/internal"
 )
 
 func main() {
@@ -38,6 +38,10 @@ func main() {
 		commands.Down(cfg)
 	case "status":
 		commands.Status(cfg)
+	case "analytics":
+		commands.Analytics(cfg, os.Args[2:])
+	case "verify":
+		commands.Verify(cfg, os.Args[2:])
 	case "agent":
 		commands.Agent(cfg, os.Args[2:])
 	case "knowledge":

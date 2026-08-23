@@ -156,3 +156,39 @@ class TestConfigParsing:
         v1 = engine().evaluate("email alice@example.com")
         v2 = engine().evaluate("email alice@example.com")
         assert v1.action is v2.action is Action.LOCAL_ONLY
+
+    def test_reversible_pseudonymization(self):
+        from kubemind_policy import pseudonymize_string, restore_string
+
+        prompt = "Please send credentials to alice@example.com and call 555-123-4567."
+        pseudo, token_map, hits = pseudonymize_string(prompt)
+        assert "alice@example.com" not in pseudo
+        assert "555-123-4567" not in pseudo
+        assert len(token_map) == 2
+        assert "email" in hits and "phone" in hits
+
+        # Model generates output using the tokens
+        model_output = f"Acknowledged. I will forward to {list(token_map.keys())[0]}."
+        restored = restore_string(model_output, token_map)
+        assert "alice@example.com" in restored
+
+    def test_local_ner_detection(self):
+        from kubemind_policy import detect, pseudonymize_string, restore_string
+
+        prompt = "Patient: John Doe lives at 742 Evergreen Terrace and works at Acme Corp."
+        hits = detect(prompt)
+        assert "person" in hits
+        assert "address" in hits
+        assert "organization" in hits
+
+        pseudo, token_map, hits_found = pseudonymize_string(prompt)
+        assert "John Doe" not in pseudo
+        assert "742 Evergreen Terrace" not in pseudo
+        assert "Acme Corp" not in pseudo
+        assert "[KM_PERSON_1]" in pseudo or "[KM_ADDRESS_1]" in pseudo or "[KM_ORGANIZATION_1]" in pseudo
+
+        # Test reversible restoration
+        restored = restore_string(pseudo, token_map)
+        assert restored == prompt
+
+

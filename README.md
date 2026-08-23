@@ -105,6 +105,14 @@ helm upgrade --install kubemind ./charts/kubemind \
 
 Semantic cache: Redis by default in compose; set `KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector` (Helm default) for nearest-neighbour in Postgres.
 
+## Client SDKs & Examples
+
+Official client SDKs with native OpenAI compatibility, offline NER pseudonymization, and tamper-evident audit verification:
+
+- **Python SDK (`kubemind-sdk`)**: [`sdk/python/`](sdk/python) · `pip install kubemind-sdk`
+- **TypeScript / Node.js SDK (`@kubemind/sdk`)**: [`sdk/typescript/`](sdk/typescript) · `npm install @kubemind/sdk`
+- **Interactive Walkthroughs**: [`examples/`](examples) (Python & TypeScript demos)
+
 ## Documentation
 
 | Doc | Description |
@@ -116,6 +124,7 @@ Semantic cache: Redis by default in compose; set `KUBEMIND_SEMANTIC_CACHE_BACKEN
 | [docs/adr/0001-kubemind-naming.md](docs/adr/0001-kubemind-naming.md) | Naming ADR |
 | [charts/kubemind/README.md](charts/kubemind/README.md) | Helm chart |
 | [landing_8/](landing_8/) | Marketing landing page |
+| [quality_audit.md](quality_audit.md) | Comprehensive quality & persona audit |
 
 ## API (summary)
 
@@ -123,6 +132,7 @@ Full inventory: **[docs/api.md](docs/api.md)**.
 
 ### router
 - `POST /v1/chat/completions` · `POST /v1/route` · `POST /v1/classify`
+- `GET /v1/usage/analytics` · `GET /v1/analytics/costs` · `GET /v1/usage`
 - `GET /v1/intents` · `GET /v1/routing/report` · `GET /metrics`
 - Feedback review: `GET/POST /v1/intents/review*`
 

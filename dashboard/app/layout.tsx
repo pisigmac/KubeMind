@@ -7,7 +7,7 @@ import { Nav } from "@/components/ui/nav";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Tricore — AI Builder Stack",
+  title: "KubeMind — AI Builder Stack",
   description: "Unified platform for building AI products",
 };
 

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from kubemind_policy import (
     PII_MODES,
     detect,
+    pseudonymize_string,
     redact_string,
     score_injection,
 )
@@ -52,6 +53,7 @@ class PolicyVerdict:
     injection_score: float = 0.0
     injection_flags: List[str] = field(default_factory=list)
     text: Optional[str] = None
+    token_map: Dict[str, str] = field(default_factory=dict)
     redacted: bool = False
     cacheable: bool = True
     reason: Optional[str] = None
@@ -195,11 +197,12 @@ class PolicyEngine:
             )
 
         out_text = text
+        token_map: Dict[str, str] = {}
         redacted = False
         # Redaction still applies underneath a local_only verdict: sending less
         # is better even when the destination is inside the cluster.
         if redact_modes:
-            out_text, hits = redact_string(text, sorted(set(redact_modes)))
+            out_text, token_map, hits = pseudonymize_string(text, sorted(set(redact_modes)))
             redacted = bool(hits)
 
         return PolicyVerdict(
@@ -209,6 +212,7 @@ class PolicyEngine:
             injection_score=injection_score,
             injection_flags=injection_flags,
             text=out_text,
+            token_map=token_map,
             redacted=redacted,
             cacheable=action not in self.no_cache_actions,
         )

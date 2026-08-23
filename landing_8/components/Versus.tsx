@@ -4,20 +4,28 @@ import { motion } from "framer-motion";
 
 const rows = [
   {
-    them: "LiteLLM / Portkey route by model name",
-    us: "kmind routes by classified intent → full profile",
+    them: "LiteLLM / Portkey route by static model names",
+    us: "kmind routes by classified intent → dynamic fallback profile",
   },
   {
-    them: "Helicone / Langfuse observe after the call",
-    us: "kmind enforces sensitivity before the call leaves",
+    them: "Helicone / Langfuse observe PII after external dispatch",
+    us: "kmind enforces pre-dispatch sensitivity gating & local-first fallback",
   },
   {
-    them: "No owned memory plane",
-    us: "Retrieval intents assemble context from mind",
+    them: "Destructive regex redaction breaks LLM context",
+    us: "In-memory reversible pseudonymization (NER token mapping restored on return)",
   },
   {
-    them: "Mutable logs",
-    us: "Hash-chained ledger with verify endpoint",
+    them: "Silent hallucination when internal memory is down",
+    us: "Fail-closed 503 & explicit empty grounding labelling (No fake context)",
+  },
+  {
+    them: "No owned knowledge plane",
+    us: "Retrieval intents assemble context from native mind pgvector graph",
+  },
+  {
+    them: "Mutable SQL logs vulnerable to tampering",
+    us: "Immutable SHA-256 hash-chained ledger with /v1/audit/verify endpoint",
   },
 ];
 
@@ -26,12 +34,12 @@ export default function Versus() {
     <section id="vs" className="border-t border-line bg-paper py-24 text-ink md:py-32">
       <div className="mx-auto max-w-6xl px-6 md:px-8">
         <p className="font-[family-name:var(--font-mono)] text-xs uppercase tracking-[0.2em] text-ink/50">
-          The wedge
+          The competitive wedge
         </p>
         <h2 className="mt-3 max-w-2xl font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight md:text-4xl">
           Others forward.{" "}
           <span className="font-[family-name:var(--font-mono)] text-[0.92em]">kmind</span>{" "}
-          decides.
+          governs.
         </h2>
 
         <div className="mt-14 divide-y divide-ink/10 border-y border-ink/10">

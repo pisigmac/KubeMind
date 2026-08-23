@@ -186,3 +186,27 @@ def test_valid_workspace():
     assert valid_workspace("team-a_1")
     assert not valid_workspace("")
     assert not valid_workspace("a/b")
+
+
+class TestRBAC:
+    def test_role_parsing_from_env(self, monkeypatch):
+        monkeypatch.setenv(
+            "KUBEMIND_API_KEYS",
+            "k_admin:acme:admin, k_dev:acme:developer, k_auditor:acme:auditor, k_view:acme:viewer",
+        )
+        auth = Authenticator.from_config()
+        assert auth.authenticate("k_admin", None).role == "admin"
+        assert auth.authenticate("k_dev", None).role == "developer"
+        assert auth.authenticate("k_auditor", None).role == "auditor"
+        assert auth.authenticate("k_view", None).role == "viewer"
+
+    def test_scope_enforcement(self, monkeypatch):
+        monkeypatch.setenv("KUBEMIND_API_KEYS", "k_auditor:acme:auditor")
+        auth = Authenticator.from_config()
+        auditor_res = auth.authenticate("k_auditor", None)
+        assert auditor_res.has_scope("audit:verify") is True
+        assert auditor_res.has_scope("chat") is False
+        with pytest.raises(AuthError) as exc:
+            auditor_res.assert_scope("chat")
+        assert exc.value.status_code == 403
+

@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 
 class MemoryManager:
     def __init__(self):
-        self.mind_url = os.environ.get("CONTEXTWEAVE_URL", "http://localhost:8081")
+        self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
         self.client: Optional[httpx.AsyncClient] = None
         self.is_ready = False
         self.retention_turns = int(os.environ.get("MEMORY_RETENTION_TURNS", "10"))

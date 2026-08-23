@@ -39,7 +39,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div>
-              <span className="text-xl font-black tracking-wider text-white font-mono">TRICORE</span>
+              <span className="text-xl font-black tracking-wider text-white font-mono">KUBEMIND</span>
               <span className="ml-2 text-[10px] uppercase font-bold tracking-widest text-cyan-400 bg-cyan-950/80 border border-cyan-800/50 px-2 py-0.5 rounded-full">v0.1.0</span>
             </div>
           </div>
@@ -208,7 +208,7 @@ export default function LandingPage() {
               <div className="w-12 h-12 rounded-xl bg-cyan-950 border border-cyan-800/50 flex items-center justify-center text-cyan-400 mb-6 group-hover:scale-110 transition-transform">
                 <Network className="w-6 h-6" />
               </div>
-              <h4 className="text-2xl font-bold text-white mb-3">Router (SwitchBoard)</h4>
+              <h4 className="text-2xl font-bold text-white mb-3">Router</h4>
               <p className="text-slate-400 text-sm leading-relaxed mb-6">
                 Intelligent LLM gateway featuring automatic fallback, model load balancing, Redis response caching, and custom circuit breakers for 99.99% uptime.
               </p>

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/pisigmac/tricore/internal"
+	"github.com/kubemind/kmind/internal"
 )
 
 func Gateway(cfg *internal.Config, args []string) {

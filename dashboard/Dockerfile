@@ -2,7 +2,7 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install
 
 ARG ROUTER_URL=http://router:8080
 ARG MIND_URL=http://mind:8081

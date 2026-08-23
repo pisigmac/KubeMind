@@ -37,7 +37,7 @@ build:
 
 cli:
 	mkdir -p bin
-	cd cmd/tricore && go build -o ../../bin/kmind .
+	cd cmd/kmind && go build -o ../../bin/kmind .
 	@# Transitional alias for scripts still calling tricore
 	cd bin && ln -sfn kmind tricore
 
@@ -52,6 +52,10 @@ test:
 test-integration:
 	@echo "Running integration tests (requires running stack)..."
 	cd tests/integration && pytest -v
+
+test-e2e:
+	@echo "Running end-to-end system verification tests..."
+	PYTHONPATH="shared/python:$$PYTHONPATH" pytest tests/e2e -v
 
 # ── Intent evaluation ────────────────────────────────────────────
 # Scores the classifier against a held-out labelled set. Falls back to
