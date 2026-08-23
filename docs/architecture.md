@@ -1,125 +1,109 @@
-# KubeMind architecture
+# KubeMind Enterprise Architecture
 
-**Product:** KubeMind — self-hosted, Kubernetes-native AI control plane  
-**Status:** Living document (aligned with intent-routing + governance wedge)
+**Product:** KubeMind — Kubernetes-Native AI Control Plane, Governance Gateway & Autonomous Infrastructure  
+**Status:** Canonical Reference Architecture (Release v0.3.0)
 
-## One-line claim
+---
 
-Every prompt is classified once — for **purpose** (intent) and for **sensitivity** (PII, secrets, injection) — and routed on both, with a tamper-evident record of the decision.
+## Core Value Proposition
 
-## System map
+Every prompt is evaluated and transformed in microsecond pipelines:
+1. **Purpose Classification**: Adaptive soft-margin intent routing to optimal models or local instances.
+2. **Zero-Egress Security & Privacy**: Inline Named Entity Recognition (NER), custom DLP dictionaries, and obfuscation-proof prompt injection defense.
+3. **Reversible Pseudonymization**: In-memory tokenization before cloud dispatch and real-time de-anonymization over Server-Sent Events (SSE).
+4. **Cryptographic Proof**: SHA-256 hash-chained tamper-evident audit ledger verification.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  kmind CLI  ·  Dashboard :9000  ·  Partner landing (landing_8)   │
-├──────────────────────────────────────────────────────────────────┤
-│  router  :9080   Intent + policy gateway, cache, providers       │
-│  mind    :9081   Knowledge graph, hybrid search, retrieval       │
-│  agents  :9082   Missions, planning, tools                       │
-│  sentinel:9083   Spans, audit ledger, metrics, live stream       │
-├──────────────────────────────────────────────────────────────────┤
-│  Postgres+pgvector  ·  Redis  ·  Ollama (local models/embeddings)│
-└──────────────────────────────────────────────────────────────────┘
-```
+---
 
-| Service | Role |
-|---------|------|
-| **router** | Only path for LLM calls. Classifies intent, enforces sensitivity, selects a route profile, optionally retrieves from mind, dispatches with fallback/cascade. |
-| **mind** | Workspace knowledge. Queried by the router when intent is retrieval (`rag`). |
-| **agents** | Long-running missions; all LLM traffic still goes through router. |
-| **sentinel** | Observability plus the hash-chained audit ledger (`GET /v1/audit/verify`). |
-
-## Credential ownership
-
-KubeMind has one deployment-level `credential_mode`; requests cannot change
-it. `keymint` is the production mode: router providers are metadata-only and
-the Zetakube Runtime uses a Connection reference plus one-use KeyMint
-capability. `direct` is an explicit self-hosted/migration mode in which
-KubeMind receives deployment-secret provider keys. KeyMint failure never
-falls back to direct mode. See [credential-modes.md](./credential-modes.md).
-
-## Routing constraint precedence
-
-Trusted tenant, operation, provider, data-region, budget and Connection scope
-remove candidates before preferences are considered. Classifier abstention or
-failure deterministically uses the general profile. Successful decisions emit
-stable reason codes plus safe considered/eligible/selected provider names. See
-[design/deterministic-routing.md](./design/deterministic-routing.md).
-
-## Design invariant
-
-**A governance decision must never depend on the intent classifier.**
-
-Intent may abstain or be wrong — that costs quality or money. Sensitivity is a control — being wrong is a breach. `router.policy` does not import `router.intent`. Detectors live in `shared/python/kubemind_policy` so router (inline) and sentinel (at ingest) cannot drift apart.
-
-## Request pipeline (router)
+## High-Level System Architecture
 
 ```
-1. Auth                 workspace from API key (not a client-supplied header)
-2. Exact cache          early return; no embedding on this path
-3. Sensitivity          PII / secrets / injection on raw text
-4. Embed once           shared by intent + semantic cache
-5. Intent               k-NN (+ optional linear head) with margin confidence
-6. Profile              pool, model, params, cache policy, retrieval flag
-7. Policy overlay       redact / local_only / block over the profile pool
-8. Semantic cache       model-aware signature; intent-partitioned when confident
-9. Retrieval            mind augmentation for retrieval intents
-10. Dispatch            direct provider client, or KeyMint capability proxy
-11. Decision record     to sentinel ledger + routing metrics
+                       ┌──────────────────────────────────────────────────────────┐
+                       │               KUBEMIND ENTERPRISE PLATFORM               │
+                       │                  Release v0.3.0 (master)                 │
+                       └────────────────────────────┬─────────────────────────────┘
+                                                    │
+        ┌───────────────────┬───────────────────────┼───────────────────────┬───────────────────┐
+        │                   │                       │                       │                   │
+        ▼                   ▼                       ▼                       ▼                   ▼
+┌──────────────────┐ ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
+│ Gateway & Policy │ │ Cloud Security    │ │ Autonomous Agents │ │ Ops & Monitoring  │ │ Client Ecosystem  │
+│ ──────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │
+│ • Local NER DLP  │ │ • 4-Tier RBAC     │ │ • Multi-Agent     │ │ • kmind top TUI   │ │ • @kubemind/sdk   │
+│ • SSE Streaming  │ │ • HashiCorp Vault │ │   Swarm Pipeline  │ │ • kmind chat REPL │ │   (TypeScript)    │
+│ • HNSW pgvector  │ │ • AWS Secrets     │ │ • Native MCP      │ │ • PrometheusRules │ │ • kubemind-sdk    │
+│ • Wasm Hooks     │ │ • GCP Secrets     │ │   Server (Claude) │ │ • Grafana HUD     │ │   (Python)        │
+│ • Adaptive T-Soft│ │ • SHA-256 Ledger  │ │ • Sandboxed Tools │ │ • Next.js UI DAG  │ │ • Linux/Mac CLIs  │
+└──────────────────┘ └───────────────────┘ └───────────────────┘ └───────────────────┘ └───────────────────┘
 ```
 
-Exact cache stays **in front of** embedding so the fastest path stays ~1ms. Intent is stored on cache entries because an exact hit never embeds and therefore cannot classify.
+---
 
-## Intent classification
+## Microservices Topology
 
-- **Rules** — high-precision prior / hard overrides (`CrashLoopBackOff`, CVE ids).
-- **k-NN** — over declarative examples in `gateway.yaml` (not centroids).
-- **Confidence** — top-1 − top-2 margin; abstain to `general` below threshold.
-- **Decoy class** — `_background` absorbs out-of-distribution prompts.
-- **Calibration** — `make eval-calibrate` fits softmax temperature on a hold-out.
-- **Linear head** — optional; `make eval-train-linear` ships only if it beats k-NN on consequence-weighted error.
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  kmind CLI  ·  Next.js Dashboard :9000  ·  Partner Landing (landing_8)   │
+├──────────────────────────────────────────────────────────────────────────┤
+│  router   :9080   Intent + Policy Gateway, SSE Streaming, KMS, MCP       │
+│  mind     :9081   Knowledge Graph, pgvector Hybrid Search, Grounding     │
+│  agents   :9082   Multi-Agent Swarm Orchestrator, Planning, Tool Runtime │
+│  sentinel :9083   SHA-256 Audit Ledger, OpenTelemetry Spans, WebSocket   │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Postgres (pgvector HNSW)  ·  Redis  ·  Ollama / On-Prem Inference       │
+└──────────────────────────────────────────────────────────────────────────┘
+```
 
-Adding an intent is config: examples + a profile name. No code change.
+| Service | Port | Responsibilities |
+|---------|------|------------------|
+| **`router`** | `9080` | Unified AI gateway: rate limiting, Wasm hooks, local NER/DLP, adaptive softmax routing, HNSW semantic cache, SSE stream de-anonymization, KMS credential management, and MCP server. |
+| **`mind`** | `9081` | Enterprise organizational memory: pgvector hybrid vector + keyword retrieval with fail-closed grounding guarantees. |
+| **`agents`** | `9082` | Autonomous swarm execution: ArchitectAgent, CoderAgent, and ReviewerAgent with self-correcting remediation loops. |
+| **`sentinel`** | `9083` | Cryptographic SHA-256 tamper-evident ledger, distributed trace ingestion, legal hold, and compliance verification. |
+| **`dashboard`** | `9000` | Next.js 16 operator console with live CFO analytics, SHA-256 ledger integrity visualizer, and Agent DAG workflow graph. |
 
-## Sensitivity policy
+---
 
-Actions (most restrictive wins): `allow` < `redact` < `local_only` < `block`.
+## Request & Streaming Execution Pipeline
 
-- Secrets / high injection → **block** before any provider sees the prompt.
-- Personal data → **local_only**; if no healthy local provider exists → **503**, never cloud fallback.
-- Sensitive prompts are not cached.
+```
+1. RBAC Authentication    Resolve workspace & verify granular role scopes (admin, developer, auditor, viewer)
+2. Pre-Dispatch Hooks     Execute custom WebAssembly / Python extensibility filters
+3. Exact Cache Check      Instant lookup (<1ms) before embedding
+4. Sensitivity & DLP      Offline NER (names, addresses, orgs) + custom DLP regex & proprietary dictionary masking
+5. Embed Once             Generate shared vector embedding for classification & semantic cache
+6. Adaptive Intent Route  Softmax temperature scaling (T) and margin gating (code, rag, general, log, security)
+7. Route Profile & Pool   Select candidate models (local-first vs cloud fallback) based on egress policy
+8. HNSW Semantic Cache    Sub-millisecond cosine nearest-neighbor search with intent partitioning
+9. Knowledge Grounding    Hybrid vector retrieval from Mind (503 fail-closed when Mind is down in production)
+10. KMS Key Resolution    Zero-trust dynamic credential fetch from Vault, AWS Secrets Manager, or GCP
+11. Model Execution:
+    ├─ Non-Streaming:     Dispatch request, receive response, restore tokens in-memory
+    └─ Streaming (SSE):   Pass chunks through StreamingDeAnonymizer sliding buffer to swap tokens live
+12. Audit & Telemetry     Emit SHA-256 hash-chained entry to Sentinel ledger and Prometheus metrics
+```
 
-## Multi-tenancy
+---
 
-Workspace is derived from `X-API-Key` via `shared/python/kubemind_auth`, enforced in router, mind, agents, and sentinel. Open mode (trust `X-Workspace-ID`) is for local dev only. In-cluster service-to-service calls use `KUBEMIND_SERVICE_KEY`.
+## Key Architectural Invariants
 
-## Data plane
+1. **Governance Independence**:
+   * *A governance or DLP decision never depends on the intent classifier.*
+   * Sensitivity and NER gating are hard controls; classifier failure falls back to `general` without bypassing policy.
+2. **Zero-Egress Reversible Privacy**:
+   * Sensitive entities (`[KM_PERSON_N]`, `[KM_ADDRESS_N]`, `[KM_DLP_N]`) are replaced with tokens before leaving the local cluster and reconstructed in memory on the return leg.
+3. **Fail-Closed Grounding**:
+   * If a prompt requires knowledge retrieval (`rag`) and Mind is unreachable, production returns **HTTP 503** rather than allowing the model to hallucinate.
+4. **Zero Static Credentials**:
+   * Cloud provider keys are resolved dynamically via KeyMint KMS adapters (Vault Kubernetes SA auth, AWS IAM, GCP Secret Manager) rather than static container environment variables.
+5. **Cryptographic Proof of Compliance**:
+   * Every routing decision, policy action, and model span is recorded in a sequential SHA-256 hash chain that can be independently verified via `kmind verify` or `GET /v1/audit/verify`.
 
-| Store | Use |
-|-------|-----|
-| Redis | Exact cache, rate limits, feedback queue, circuit-breaker state |
-| Postgres + pgvector | mind vectors; optional semantic cache (`KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector`); audit ledger |
-| SQLite | sentinel span table for single-node / tests (ledger prefers Postgres) |
+---
 
-## Deployment
+## Extensibility & Integration Protocols
 
-- **Compose:** `make up` — local stack on ports 9080–9083, 9000.
-- **Helm:** `charts/kubemind/` — namespace `kubemind`, images `kubemind/*`. Replaces retired `k8s/switchboard` / `tricore` names.
-- **CLI:** `kmind` (`bin/kmind`).
-
-## Observability & proof
-
-- Router `/metrics` — intent distribution, policy actions, provider latency.
-- Sentinel spans + WebSocket stream.
-- Audit ledger — hash-chained per workspace; `GET /v1/audit/verify`.
-- Routing report — `/v1/routing/report`; cache hits counted as **zero cost**.
-
-## Further reading
-
-| Doc | Topic |
-|-----|--------|
-| [design/intent-routing.md](./design/intent-routing.md) | Classifier, policy, eval methodology |
-| [design/semantic-cache.md](./design/semantic-cache.md) | Cache design |
-| [api.md](./api.md) | HTTP/WS inventory |
-| [adr/0001-kubemind-naming.md](./adr/0001-kubemind-naming.md) | Naming |
-| [../charts/kubemind/README.md](../charts/kubemind/README.md) | Helm install |
+* **Model Context Protocol (MCP)**: Native JSON-RPC stdio server exposing `kubemind_route`, `kubemind_mind_query`, `kubemind_mind_ingest`, and `kubemind_verify_audit` to Claude Desktop and Cursor IDE.
+* **WebAssembly (Wasm) Hooks**: Microsecond pre- and post-dispatch filter hooks for bespoke regulatory compliance checks.
+* **Client SDKs**: Official type-safe libraries for TypeScript (`@kubemind/sdk`) and Python (`kubemind-sdk`).
+* **Cloud-Native Deployment**: Production Helm charts with PrometheusRule CRDs and Grafana Dashboards under `charts/kubemind/`.
