@@ -1,0 +1,13 @@
+These synthetic fixtures were authored locally from the public, versioned
+Zetakube Runtime JSON contract descriptions reviewed on 2026-08-22.
+
+Contract identifiers:
+- https://zetakube.com/contracts/json-schema/command-envelope.v1.schema.json
+- https://zetakube.com/contracts/json-schema/runtime-result.v1.schema.json
+- https://zetakube.com/contracts/json-schema/runtime-error.v1.schema.json
+
+No Zetakube application source code is copied into KubeMind. Fixture values
+are synthetic and contain no production data or credentials.
+
+`routing-golden.v1.json` is a locally authored deterministic policy corpus. It
+contains no provider quality, partnership, residency, or performance claim.

@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
-from datetime import datetime
 
 class SpanIngest(BaseModel):
     trace_id: str = Field(..., description="Unique trace identifier")
@@ -53,3 +52,13 @@ class ExportResponse(BaseModel):
     spans: List[SpanResponse]
     count: int
     exported_at: str
+
+
+class RetentionRequest(BaseModel):
+    """Per-workspace retention, replacing the unconditional 90-day prune."""
+
+    workspace_id: Optional[str] = None
+    retention_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    # Suspends deletion entirely. Retention that destroys evidence during a
+    # dispute is worse than no retention at all.
+    legal_hold: Optional[bool] = None

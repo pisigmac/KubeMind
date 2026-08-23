@@ -1,7 +1,10 @@
 import os
+import shlex
 import subprocess
-import httpx
+import sys
 from typing import Dict, Any, List
+
+import httpx
 
 class ToolRegistry:
     def __init__(self):
@@ -145,14 +148,20 @@ class ShellTool(BaseTool):
 
         # Whitelist approach for commands
         allowed_commands = {"python", "node", "git", "curl", "cat", "ls", "grep", "find", "echo", "wc", "head", "tail", "sort", "uniq", "pwd", "mkdir", "touch", "cp", "mv", "diff", "tree"}
-        cmd_parts = cmd.split()
+        try:
+            cmd_parts = shlex.split(cmd)
+        except ValueError as exc:
+            return {"error": f"Invalid command syntax: {exc}", "blocked": True}
         if cmd_parts and cmd_parts[0] not in allowed_commands:
             return {"error": f"Command not in allowlist: {cmd_parts[0]}", "allowed": list(allowed_commands)}
 
+        if not cmd_parts:
+            return {"error": "Command must not be empty", "blocked": True}
+
         try:
             result = subprocess.run(
-                cmd,
-                shell=True,
+                cmd_parts,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=min(timeout, 60),
@@ -265,7 +274,7 @@ class CodeAnalyzerTool(BaseTool):
             return {"error": "Only Python files supported", "path": full_path}
 
         try:
-            cmd = ["python", "-m", "ruff", "check"]
+            cmd = [sys.executable, "-m", "ruff", "check"]
             if fix:
                 cmd.append("--fix")
             cmd.append(full_path)

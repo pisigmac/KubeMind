@@ -1,8 +1,9 @@
 import os
-import yaml
+import yaml  # type: ignore[import-untyped]  # Runtime dependency is pinned; stubs are dev-only.
 from typing import Dict, List, Optional, Any, Sequence
 
 from router.providers.base import BaseProvider
+from router.providers.keymint_managed import KeyMintManagedProvider
 from router.providers.ollama import OllamaProvider
 from router.providers.openai_compat import OpenAICompatibleProvider
 
@@ -22,6 +23,7 @@ class ProviderRegistry:
     def __init__(self, cache=None, usage_tracker=None):
         self.providers: Dict[str, BaseProvider] = {}
         self.config: Dict[str, Any] = {}
+        self.credential_mode: Optional[str] = None
         self.cache = cache
         self.usage_tracker = usage_tracker
 
@@ -34,12 +36,37 @@ class ProviderRegistry:
             raw = yaml.safe_load(f)
 
         self.config = raw or {}
+        mode = os.environ.get(
+            "KUBEMIND_CREDENTIAL_MODE", str(self.config.get("credential_mode") or "")
+        ).strip().lower()
+        if mode not in {"keymint", "direct"}:
+            raise ValueError(
+                "credential_mode must be explicitly configured as keymint or direct"
+            )
+        from kubemind_auth import is_production
+
+        if is_production() and mode == "direct":
+            raise ValueError(
+                "KUBEMIND_DEPLOYMENT=production refuses direct credential mode; "
+                "set KUBEMIND_CREDENTIAL_MODE=keymint"
+            )
+        self.credential_mode = mode
         for name, cfg in self.config.get("providers", {}).items():
             resolved = self._resolve_env(cfg)
             is_local = bool(resolved.get("local")) or name in LOCAL_PROVIDER_TYPES
 
+            if mode == "keymint":
+                if "api_key" in resolved or "api_key" in cfg:
+                    raise ValueError(
+                        f"Provider {name} must use a KeyMint Connection; "
+                        "ambient api_key configuration is forbidden"
+                    )
+                self.providers[name] = KeyMintManagedProvider(name, resolved)
+                print(f"[router] Loaded KeyMint-managed provider metadata: {name}")
+                continue
+
             if not is_local and not resolved.get("api_key"):
-                print(f"[router] Skipping provider {name}: no API key configured")
+                print(f"[router] Skipping direct provider {name}: no API key configured")
                 continue
 
             if is_local and not resolved.get("base_url") and name != "ollama":
@@ -74,8 +101,14 @@ class ProviderRegistry:
                 f"(priority={resolved.get('priority', 99)}, free={resolved.get('free', False)})"
             )
 
+        # Share breaker state across replicas when Redis is available.
+        redis_client = getattr(self.cache, "client", None) if self.cache else None
+        if redis_client:
+            for provider in self.providers.values():
+                provider.bind_circuit_redis(redis_client)
+
     def _resolve_env(self, cfg: Dict) -> Dict:
-        resolved = {}
+        resolved: Dict[str, Any] = {}
         for key, value in cfg.items():
             if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                 env_var = value[2:-1]
@@ -93,6 +126,10 @@ class ProviderRegistry:
         if not provider:
             return name in LOCAL_PROVIDER_TYPES
         return bool(provider.config.get("local")) or name in LOCAL_PROVIDER_TYPES
+
+    @property
+    def uses_keymint(self) -> bool:
+        return self.credential_mode == "keymint"
 
     def supports_model(self, name: str, model: str) -> bool:
         """Whether a provider can serve ``model``.
@@ -149,6 +186,36 @@ class ProviderRegistry:
 
     # ── Selection ────────────────────────────────────────────────
 
+    def _rank(
+        self, provider: BaseProvider, policy: str
+    ) -> tuple:
+        """Ordering key for a provider under a routing policy.
+
+        The three policies were previously indistinguishable -- `quality` and
+        `cost` both sorted on `priority`, and `latency` sorted on the
+        configured timeout, which is an operator's guess rather than a
+        measurement.
+        """
+        name = provider.name
+        if policy == "quality":
+            return (provider.quality_rank, provider.config.get("priority", 99), name)
+        if policy == "latency":
+            observed = provider.observed_latency_ms
+            # Unmeasured providers sort after measured ones rather than being
+            # assumed fast, but stay ahead of anything known to be slow.
+            return (
+                0 if observed is not None else 1,
+                observed if observed is not None else 0.0,
+                provider.config.get("priority", 99),
+                name,
+            )
+        # cost (default): free first, then ascending priority
+        return (
+            int(not provider.config.get("free", False)),
+            provider.config.get("priority", 99),
+            name,
+        )
+
     def eligible_providers(
         self,
         model: str,
@@ -156,12 +223,14 @@ class ProviderRegistry:
         pool: Optional[Sequence[str]] = None,
         local_only: bool = False,
         exclude: Optional[Sequence[str]] = None,
+        policy: str = "cost",
+        max_latency_ms: Optional[int] = None,
+        keymint_managed: bool = False,
     ) -> List[BaseProvider]:
         """Healthy providers that can serve ``model`` under the constraints.
 
         A profile's pool order is an explicit statement of preference and is
-        preserved. Without a pool, ordering falls back to the cost policy:
-        free first, then ascending priority.
+        preserved. Without a pool, ordering follows ``policy``.
         """
         resolved_pool: Optional[List[str]] = None
         if pool:
@@ -169,6 +238,7 @@ class ProviderRegistry:
         excluded = set(exclude or ())
 
         candidates = []
+        over_budget = []
         for name, provider in self.providers.items():
             if name in excluded:
                 continue
@@ -176,7 +246,13 @@ class ProviderRegistry:
                 continue
             if local_only and not self.is_local(name):
                 continue
-            if not provider.can_execute():
+            if keymint_managed:
+                can_execute = isinstance(
+                    provider, KeyMintManagedProvider
+                ) and provider.can_route_via_keymint()
+            else:
+                can_execute = provider.can_execute()
+            if not can_execute:
                 continue
             if not self.supports_model(name, model):
                 continue
@@ -184,12 +260,22 @@ class ProviderRegistry:
             if resolved_pool is not None:
                 rank = (resolved_pool.index(name), 0, name)
             else:
-                rank = (
-                    int(not provider.config.get("free", False)),
-                    provider.config.get("priority", 99),
-                    name,
-                )
+                rank = self._rank(provider, policy)
+
+            if max_latency_ms is not None:
+                observed = provider.observed_latency_ms
+                # Only a measured provider can bust a budget. Evicting one that
+                # has never been called would be a guess dressed up as a limit.
+                if observed is not None and observed > max_latency_ms:
+                    over_budget.append((rank, provider))
+                    continue
             candidates.append((rank, provider))
+
+        if not candidates and over_budget:
+            # Nothing meets the budget. Returning the closest is better than
+            # failing the request over a soft preference.
+            over_budget.sort(key=lambda x: (x[1].observed_latency_ms or 0.0))
+            return [p for _, p in over_budget]
 
         candidates.sort(key=lambda x: x[0])
         return [c[1] for c in candidates]
@@ -202,6 +288,7 @@ class ProviderRegistry:
         *,
         pool: Optional[Sequence[str]] = None,
         local_only: bool = False,
+        max_latency_ms: Optional[int] = None,
     ) -> Optional[BaseProvider]:
         if preferred_provider:
             p = self.provider_by_name(preferred_provider, model=model)
@@ -210,31 +297,25 @@ class ProviderRegistry:
                     return p
 
         candidates = self.eligible_providers(
-            model, pool=pool, local_only=local_only
+            model,
+            pool=pool,
+            local_only=local_only,
+            policy=policy,
+            max_latency_ms=max_latency_ms,
         )
         if not candidates:
             # A constrained pool that cannot serve the request falls back to the
             # unconstrained set, but an egress constraint never does: that would
             # defeat the point of local_only.
             if pool:
-                candidates = self.eligible_providers(model, local_only=local_only)
+                candidates = self.eligible_providers(
+                    model,
+                    local_only=local_only,
+                    policy=policy,
+                    max_latency_ms=max_latency_ms,
+                )
             if not candidates:
                 return None
-
-        if policy == "quality":
-            candidates.sort(
-                key=lambda p: (
-                    p.config.get("priority", 99),
-                    not p.config.get("free", False),
-                )
-            )
-        elif policy == "latency":
-            candidates.sort(
-                key=lambda p: (
-                    p.config.get("timeout_seconds", 60),
-                    p.config.get("priority", 99),
-                )
-            )
         return candidates[0]
 
     def build_route_chain(
@@ -245,6 +326,8 @@ class ProviderRegistry:
         fallback_provider: Optional[str] = None,
         pool: Optional[Sequence[str]] = None,
         local_only: bool = False,
+        policy: str = "cost",
+        max_latency_ms: Optional[int] = None,
         max_attempts: int = 3,
     ) -> List[BaseProvider]:
         """Ordered providers to try for this request.
@@ -263,7 +346,13 @@ class ProviderRegistry:
             if p and not (local_only and not self.is_local(p.name)):
                 _append(p)
 
-        for provider in self.eligible_providers(model, pool=pool, local_only=local_only):
+        for provider in self.eligible_providers(
+            model,
+            pool=pool,
+            local_only=local_only,
+            policy=policy,
+            max_latency_ms=max_latency_ms,
+        ):
             _append(provider)
 
         if fallback_provider:
@@ -272,7 +361,9 @@ class ProviderRegistry:
                 _append(fb)
 
         if not chain and pool:
-            for provider in self.eligible_providers(model, local_only=local_only):
+            for provider in self.eligible_providers(
+                model, local_only=local_only, policy=policy
+            ):
                 _append(provider)
 
         return chain[:max_attempts]
@@ -337,6 +428,13 @@ class ProviderRegistry:
                 "circuit_state": provider.circuit_state.value,
                 "models": provider.config.get("models", []),
                 "priority": provider.config.get("priority", 99),
+                "quality_rank": provider.quality_rank,
+                "observed_latency_ms": (
+                    round(provider.observed_latency_ms, 1)
+                    if provider.observed_latency_ms is not None
+                    else None
+                ),
+                "latency_samples": provider.latency_samples,
                 "free": provider.config.get("free", False),
                 "local": self.is_local(name),
                 "failure_count": provider.failure_count,

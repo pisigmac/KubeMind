@@ -7,6 +7,14 @@ from typing import Optional
 import yaml
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from kubemind_auth import (
+    API_KEY_HEADER,
+    WORKSPACE_HEADER,
+    AuthError,
+    Authenticator,
+    AuthResult,
+    cors_origins,
+)
 
 from mind.models import (
     IngestRequest,
@@ -92,17 +100,33 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER],
 )
+
+authenticator = Authenticator.from_config()
+print(authenticator.startup_banner("mind"))
+
+
+async def get_auth(request: Request) -> AuthResult:
+    try:
+        return authenticator.authenticate(
+            request.headers.get(API_KEY_HEADER),
+            request.headers.get(WORKSPACE_HEADER),
+        )
+    except AuthError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
 
 
 async def get_workspace(request: Request) -> str:
-    ws = request.headers.get("X-Workspace-ID", "default")
-    if not ws or not ws.replace("-", "").replace("_", "").isalnum():
-        raise HTTPException(status_code=400, detail="Invalid X-Workspace-ID")
-    return ws
+    """Workspace comes from the key when one is configured, never the header.
+
+    Retrieved knowledge is the most sensitive thing this service holds, so a
+    forged header here reads another tenant's documents.
+    """
+    return (await get_auth(request)).workspace_id
 
 
 async def _run_query(req: QueryRequest, workspace_id: str) -> QueryResponse:

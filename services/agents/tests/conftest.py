@@ -9,7 +9,7 @@ def event_loop():
     loop.close()
 
 @pytest.fixture
-async def mock_tools():
+def mock_tools():
     tools = MagicMock()
     tools.tools = {"filesystem": MagicMock(), "shell": MagicMock()}
     tools.invoke = AsyncMock(return_value={"result": "ok"})
@@ -17,7 +17,7 @@ async def mock_tools():
     return tools
 
 @pytest.fixture
-async def mock_planner():
+def mock_planner():
     planner = MagicMock()
     planner.init = AsyncMock()
     planner.plan = AsyncMock(return_value={
@@ -30,7 +30,7 @@ async def mock_planner():
     return planner
 
 @pytest.fixture
-async def mock_memory():
+def mock_memory():
     memory = MagicMock()
     memory.init = AsyncMock()
     memory.read = AsyncMock(return_value=[])

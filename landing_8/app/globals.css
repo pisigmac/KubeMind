@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #071018;
+  --color-ink-soft: #0e1a26;
+  --color-panel: #132233;
+  --color-line: #243647;
+  --color-fog: #9aafc0;
+  --color-paper: #f3efe6;
+  --color-signal: #d4a24c;
+  --color-signal-hot: #f0c46a;
+  --color-sea: #5cdba8;
+  --color-danger: #e85d4c;
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-signal) 45%, transparent);
+  color: var(--color-ink);
+}
+
+@keyframes drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(2%, -1.5%, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes pulse-line {
+  0%,
+  100% {
+    stroke-dashoffset: 120;
+    opacity: 0.35;
+  }
+  50% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-mesh {
+  animation: drift 18s ease-in-out infinite;
+}
+
+.route-path {
+  stroke-dasharray: 8 10;
+  animation: pulse-line 3.2s ease-in-out infinite;
+}
+
+.reveal {
+  animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

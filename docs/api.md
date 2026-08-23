@@ -1,8 +1,10 @@
 # KubeMind public API inventory
 
-**Source of truth:** FastAPI apps under `services/*/src/*/main.py` as of Phase 0.  
+**Source of truth:** FastAPI apps under `services/*/src/*/main.py`.  
 **Product:** KubeMind  
-**Auth / tenancy:** Most router, mind, and agents routes read workspace from header `X-Workspace-ID` (default `default`). Value must be alphanumeric plus `-` / `_`.
+**Architecture:** [architecture.md](./architecture.md)
+
+**Auth / tenancy:** Workspace is derived from `X-API-Key` when `KUBEMIND_API_KEYS` (or config `auth.keys`) is set. In open mode (no keys), `X-Workspace-ID` is trusted for local development only. In-cluster service calls may use `KUBEMIND_SERVICE_KEY` and name a workspace in the header. See `shared/python/kubemind_auth`.
 
 Base URLs (local compose):
 
@@ -20,24 +22,30 @@ Base URLs (local compose):
 | Item | Value |
 |------|--------|
 | Content type | `application/json` |
-| Workspace header | `X-Workspace-ID: <id>` |
+| API key | `X-API-Key: <key>` (binds workspace) |
+| Workspace header | `X-Workspace-ID: <id>` (open mode, or service key) |
 | Health | `GET /health` on every service |
-| CORS | Permissive (`*`) in current code — tighten for production |
+| CORS | `KUBEMIND_CORS_ORIGINS` (default localhost dashboard origins) |
 
 ---
 
 ## router (`services/router`) — port 9080
 
-FastAPI title in code is still `SwitchBoard` (rename later). Service identity in `/health` is `router`.
+Intent-aware gateway: classify → policy → profile → (retrieve) → dispatch. Service identity in `/health` is `router`.
 
 | Method | Path | Purpose | Request summary | Auth / workspace |
 |--------|------|---------|-----------------|------------------|
-| `GET` | `/health` | Liveness + provider/cache flags | — | None |
-| `POST` | `/v1/chat/completions` | OpenAI-compatible chat; provider route + exact Redis cache | `ChatRequest`: `model`, `messages[]`, optional `temperature`, `max_tokens`, `stream`, `tools` | `X-Workspace-ID` |
-| `POST` | `/v1/embeddings` | Embedding via selected provider | `EmbeddingsRequest`: `model`, `input` (string or list) | `X-Workspace-ID` |
-| `GET` | `/v1/providers/health` | Provider health + circuit state | — | None |
-| `GET` | `/v1/usage` | Per-workspace usage / cost summary | — | `X-Workspace-ID` |
-| `POST` | `/v1/cache/clear` | Flush Redis cache DB used by router | — | None (protect in prod) |
+| `GET` | `/health` | Liveness + classifier/cache/auth flags | — | None |
+| `GET` | `/metrics` | Prometheus metrics | — | None |
+| `POST` | `/v1/chat/completions` | OpenAI-compatible chat; intent + policy + cache | `ChatRequest` | API key / workspace |
+| `POST` | `/v1/route` | Prompt-style route API | `RouteRequest` | API key / workspace |
+| `POST` | `/v1/classify` | Dry-run intent + policy (no dispatch) | `{prompt}` | API key / workspace |
+| `GET` | `/v1/intents` | Configured intents → profiles | — | API key / workspace |
+| `GET` | `/v1/routing/report` | Per-intent cost/latency/cache (hits = $0) | — | API key / workspace |
+| `POST` | `/v1/embeddings` | Embedding via selected provider | `EmbeddingsRequest` | API key / workspace |
+| `GET` | `/v1/providers/health` | Provider health + circuit state | — | API key / workspace |
+| `GET` | `/v1/usage` | Per-workspace usage / cost summary | — | API key / workspace |
+| `POST` | `/v1/cache/clear` | Flush Redis cache | — | Admin key required |
 | `GET` | `/v1/cache/stats` | Redis stats + semantic flags | — | None |
 | `POST` | `/v1/route` | Prompt-style semantic route (SDK/landing) | `RouteRequest` | `X-Workspace-ID` |
 
@@ -166,18 +174,22 @@ FastAPI title in code is still `SwitchBoard` (rename later). Service identity in
 
 ## sentinel (`services/sentinel`) — port 9083
 
+Spans for observability; hash-chained **audit ledger** for proof. Workspace reads are scoped to the authenticated key.
+
 | Method | Path | Purpose | Request summary | Auth / workspace |
 |--------|------|---------|-----------------|------------------|
-| `GET` | `/health` | Liveness + span/WS counts | — | None |
-| `POST` | `/v1/spans` | Ingest one span | `SpanIngest` body (includes `workspace_id`) | Body field |
-| `POST` | `/v1/spans/query` | Query spans (rich filters) | `SpanQuery` | Body `workspace_id` |
-| `GET` | `/v1/spans` | Query spans (query params) | `workspace_id`, `service`, `operation`, `status`, `limit`, `offset` | Query params |
-| `GET` | `/v1/metrics` | Aggregated metrics | `workspace_id`, `hours` | Query params |
-| `GET` | `/v1/export` | Export traces (+ redaction summary + SHA256) | `workspace_id`, optional `hours` | Query params |
-| `GET` | `/v1/telemetry/traces` | **Alias** of `GET /v1/spans` | same query params | Query params |
+| `GET` | `/health` | Liveness + span/WS/ledger flags | — | None |
+| `POST` | `/v1/spans` | Ingest one span (+ ledger append) | `SpanIngest` | API key / workspace |
+| `POST` | `/v1/spans/query` | Query spans (rich filters) | `SpanQuery` | API key / workspace |
+| `GET` | `/v1/spans` | Query spans | query params | API key / workspace |
+| `GET` | `/v1/audit/verify` | Walk hash chain; report first break | `workspace_id`, `limit` | API key / workspace |
+| `GET` | `/v1/audit/head` | Current head hash for external anchoring | `workspace_id` | API key / workspace |
+| `GET` | `/v1/audit/entries` | List ledger entries | `workspace_id`, `limit`, `offset` | API key / workspace |
+| `GET` | `/v1/audit/retention` | Retention + legal hold | `workspace_id` | API key / workspace |
+| `GET` | `/v1/metrics` | Aggregated metrics | `workspace_id`, `hours` | API key / workspace |
+| `GET` | `/v1/export` | Export traces (+ redaction summary) | `workspace_id` | API key / workspace |
 | `GET` | `/metrics` | Prometheus text exposition | — | None |
-| `GET` | `/v1/stats` | Global store stats | — | None |
-| `WS` | `/v1/stream` | Real-time span stream | JSON messages: `subscribe`, `ping` | Message `workspace_id` |
+| `WS` | `/v1/stream` | Real-time span stream | `subscribe`, `ping` | Message / key |
 
 ### SpanIngest (current)
 

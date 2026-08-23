@@ -212,13 +212,25 @@ The routing report counts cache hits as zero cost. Hits replay the stored
 `usage` numbers from the original completion, so summing `usage` across
 responses would overcount spend and hide the saving the report exists to show.
 
+## Production readiness
+
+- **pgvector semantic cache.** Set `KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector`
+  (Helm default). Redis list remains the laptop default.
+- **Redis-backed circuit breakers.** Provider breakers share state across
+  replicas; they fall back to in-process memory if Redis is down.
+- **Helm chart.** `charts/kubemind/` replaces the retired `k8s/switchboard*`
+  manifests. `make helm-template` renders without installing.
+- **Cascade.** Opt-in via `routing.cascade.enabled`. Never escalates past a
+  `local_only` verdict. `make demo` exercises the partner story end to end.
+- **Linear head.** `make eval-train-linear` trains offline and refuses to write
+  a model that does not beat k-NN on consequence-weighted error.
+- **Calibration.** `make eval-calibrate` fits the softmax temperature on a
+  held-out split.
+
 ## Known limits
 
-- The semantic cache still scans a Redis list in process. Partitioning reduces
-  the scan but does not remove it; pgvector with HNSW is the next step.
-- Circuit breaker state is per-process and diverges across replicas.
 - Intent classification is single-label. A prompt spanning several intents gets
   the dominant one; sensitivity is evaluated independently, so this does not
   weaken enforcement.
-- No calibration step yet. `temperature` shapes the confidence softmax but has
-  not been fitted against a held-out split.
+- The linear head needs more labelled traffic than the 54-example eval set
+  before it reliably beats k-NN — that is intentional.

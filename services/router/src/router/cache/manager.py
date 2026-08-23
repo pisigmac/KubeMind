@@ -1,7 +1,7 @@
 import os
 import json
 import redis.asyncio as redis
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 
 class CacheManager:

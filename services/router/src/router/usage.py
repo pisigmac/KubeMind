@@ -2,11 +2,12 @@ import os
 from datetime import datetime
 from typing import Dict, Any
 
-from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, String, Integer, Float, DateTime
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 class UsageRecord(Base):
     __tablename__ = "router_usage"

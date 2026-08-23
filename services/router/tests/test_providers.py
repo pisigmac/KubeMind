@@ -6,6 +6,30 @@ import respx
 from router.providers.ollama import OllamaProvider
 from router.providers.openai_compat import OpenAICompatibleProvider
 from router.providers.base import CircuitState
+from router.providers.registry import ProviderRegistry
+
+class TestCredentialModeProduction:
+    @pytest.mark.asyncio
+    async def test_production_refuses_direct_mode(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "gateway.yaml"
+        cfg.write_text("credential_mode: direct\nproviders: {}\n")
+        monkeypatch.setenv("KUBEMIND_DEPLOYMENT", "production")
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(cfg))
+        monkeypatch.delenv("KUBEMIND_CREDENTIAL_MODE", raising=False)
+        with pytest.raises(ValueError, match="direct credential mode"):
+            await ProviderRegistry().load_providers()
+
+    @pytest.mark.asyncio
+    async def test_production_accepts_keymint_mode(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "gateway.yaml"
+        cfg.write_text("credential_mode: keymint\nproviders: {}\n")
+        monkeypatch.setenv("KUBEMIND_DEPLOYMENT", "production")
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(cfg))
+        monkeypatch.delenv("KUBEMIND_CREDENTIAL_MODE", raising=False)
+        registry = ProviderRegistry()
+        await registry.load_providers()
+        assert registry.credential_mode == "keymint"
+
 
 class TestOllamaProvider:
     @pytest.fixture

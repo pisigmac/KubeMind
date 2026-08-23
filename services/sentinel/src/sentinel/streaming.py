@@ -1,7 +1,6 @@
-from typing import List, Set
+from typing import Set
 from fastapi import WebSocket
 import json
-import asyncio
 
 class ConnectionManager:
     def __init__(self):

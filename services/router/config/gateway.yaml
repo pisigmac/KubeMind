@@ -1,8 +1,13 @@
+# Deployment-level credential ownership. Override only at process startup with
+# KUBEMIND_CREDENTIAL_MODE. Requests can never switch this mode.
+credential_mode: keymint
+
 providers:
   ollama:
     base_url: "${OLLAMA_BASE_URL}"
     models: ["llama3.1", "mistral", "nomic-embed-text", "deepseek-r1"]
     priority: 1
+    quality_rank: 5
     free: true
     timeout_seconds: 60
     local: true
@@ -10,6 +15,7 @@ providers:
     base_url: "${VLLM_BASE_URL}"
     models: ["meta-llama/Meta-Llama-3-8B-Instruct", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"]
     priority: 2
+    quality_rank: 4
     free: true
     local: true
     timeout_seconds: 60
@@ -17,45 +23,46 @@ providers:
     base_url: "${DEEPSEEK_LOCAL_BASE_URL}"
     models: ["deepseek-r1", "deepseek-r1:7b", "deepseek-r1:14b"]
     priority: 2
+    quality_rank: 4
     free: true
     local: true
     timeout_seconds: 120
   groq:
-    api_key: "${GROQ_API_KEY}"
     base_url: "https://api.groq.com/openai/v1"
     models: ["llama-3.1-70b", "mixtral-8x7b", "llama-3.1-8b-instant"]
     priority: 3
+    quality_rank: 3
     free: true
     rate_limit: 20
     timeout_seconds: 30
   google:
-    api_key: "${GOOGLE_API_KEY}"
     models: ["gemini-1.5-flash"]
     priority: 4
+    quality_rank: 3
     free: true
     rate_limit: 60
     timeout_seconds: 30
   openrouter:
-    api_key: "${OPENROUTER_API_KEY}"
     base_url: "https://openrouter.ai/api/v1"
     models: ["meta-llama/llama-3.1-70b"]
     priority: 5
+    quality_rank: 3
     free: true
     rate_limit: 20
     timeout_seconds: 30
   openai:
-    api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
     models: ["gpt-4o-mini", "gpt-4o"]
     priority: 6
+    quality_rank: 1
     free: false
     rate_limit: 100
     timeout_seconds: 30
   anthropic:
-    api_key: "${ANTHROPIC_API_KEY}"
     base_url: "${ANTHROPIC_BASE_URL}"
     models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
     priority: 6
+    quality_rank: 1
     free: false
     rate_limit: 50
     timeout_seconds: 60
@@ -64,10 +71,10 @@ providers:
 
 # ── Authentication ───────────────────────────────────────────────
 # Keys bind a caller to a workspace. With no keys configured the router runs in
-# open mode and trusts X-Workspace-ID, which is fine on a laptop and not fine
-# anywhere else. Prefer the KUBEMIND_API_KEYS env var over committing keys here.
+# fail-closed mode and refuses requests until keys are configured. A developer
+# may opt into open mode only in an explicitly local override file.
 auth:
-  required: false
+  required: true
   keys: {}
   #  "${KUBEMIND_KEY_ACME}": acme
 
@@ -79,6 +86,17 @@ cache:
   semantic:
     enabled: true
     embedding_model: nomic-embed-text
+    # nomic-embed-text is trained with task prefixes and is measurably worse
+    # without one. A single vector serves both the symmetric cache lookup and
+    # classification, so one prefix is a knowing compromise made to avoid
+    # embedding twice on every request.
+    #
+    # The invariant is consistency, not the exact value: the same prefix must
+    # reach intent examples at index time, prompts at query time, and cache
+    # entries on both store and lookup. Changing it rolls the cache namespace
+    # automatically, because vectors from different prefixes are not
+    # comparable and must never share a key.
+    embedding_prefix: "search_query: "
     distance_threshold: 0.05
     max_entries_per_workspace: 10000
     scan_limit: 2000
@@ -86,14 +104,47 @@ cache:
     # matching a `general` one. A misclassification costs a miss, not a wrong
     # answer, and low-confidence requests read the shared bucket as well.
     partition_by_intent: true
+    # redis (default): in-process cosine over a Redis list. Fine for laptop
+    # scale. pgvector: nearest-neighbour in Postgres -- set
+    # KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector or backend: pgvector here.
+    # backend: redis
+    # embedding_dims: 768
 
 # ── Routing ──────────────────────────────────────────────────────
 routing:
   intent_enabled: true
   default_profile: general
 
+  # Abstentions, near-threshold predictions and provider fallbacks are the
+  # examples a labelled set is short of, and production produces them for
+  # free. Review them at /v1/intents/review, then export the confirmed labels
+  # straight into eval/dataset.jsonl.
+  feedback:
+    enabled: true
+    # Above this the classifier was sure and the case is not worth reviewing.
+    low_confidence_threshold: 0.55
+    max_prompt_chars: 400
+    max_cases: 2000
+    ttl_seconds: 2592000
+    # Prompts that trip a detector are dropped rather than redacted. A review
+    # queue is a second copy of user traffic, and a redacted secret is still
+    # evidence a secret was sent.
+    skip_sensitive: true
+
+  # Optional cascade: try a cheap local target first, escalate when confidence
+  # or answer quality is low. Off by default until the eval set shows it helps.
+  # Never escalates past a local_only policy verdict.
+  cascade:
+    enabled: false
+    confidence_below: 0.55
+    min_answer_chars: 40
+    prefer_local_first: true
+
   classifier:
     enabled: true
+    # Optional path to a trained logistic head. Written only by
+    # `python eval/train_linear_head.py` when it beats k-NN on the harness.
+    # linear_head_path: models/linear_head.json
     # Mean of the top-k example similarities within each intent. Scoring per
     # intent rather than globally stops intents with many examples crowding out
     # intents with few.

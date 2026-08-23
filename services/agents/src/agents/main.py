@@ -1,15 +1,18 @@
-import os
-import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from kubemind_auth import (
+    API_KEY_HEADER,
+    WORKSPACE_HEADER,
+    AuthError,
+    Authenticator,
+    AuthResult,
+    cors_origins,
+)
 
 from agents.models import (
-    MissionRequest, MissionResponse, MissionStatus, ToolInvokeRequest,
-    ToolSchema, MissionListItem
+    MissionRequest, MissionResponse, MissionStatus, ToolInvokeRequest
 )
 from agents.engine import AgentEngine
 from agents.tools import ToolRegistry
@@ -57,17 +60,34 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER],
 )
 
+authenticator = Authenticator.from_config()
+print(authenticator.startup_banner("agents"))
+
+
 # ── Dependencies ─────────────────────────────────────────────────
+async def get_auth(request: Request) -> AuthResult:
+    try:
+        return authenticator.authenticate(
+            request.headers.get(API_KEY_HEADER),
+            request.headers.get(WORKSPACE_HEADER),
+        )
+    except AuthError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
 async def get_workspace(request: Request) -> str:
-    ws = request.headers.get("X-Workspace-ID", "default")
-    if not ws or not ws.replace("-", "").replace("_", "").isalnum():
-        raise HTTPException(status_code=400, detail="Invalid X-Workspace-ID")
-    return ws
+    """Workspace comes from the key when one is configured, never the header.
+
+    Missions execute tools and spend tokens, so a forged header here is a way
+    to run work against someone else's budget.
+    """
+    return (await get_auth(request)).workspace_id
 
 # ── Health ──────────────────────────────────────────────────────
 @app.get("/health")

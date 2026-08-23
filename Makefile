@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint up down status clean cli eval eval-sweep eval-ci
+.PHONY: build test test-integration lint typecheck security ci up down status clean cli eval eval-sweep eval-calibrate eval-ci eval-train-linear demo helm-template
 
 # ── Docker Compose ───────────────────────────────────────────────
 up:
@@ -64,21 +64,56 @@ eval:
 eval-sweep:
 	cd services/router && python3 eval/run_eval.py --sweep
 
+# Fit the softmax temperature on a held-out split. Confidence gates behaviour,
+# so the number has to mean something before a threshold is placed on it.
+eval-calibrate:
+	cd services/router && python3 eval/run_eval.py --calibrate
+
 # CI gate: a policy miss means sensitive content was under-enforced.
 eval-ci:
 	cd services/router && python3 eval/run_eval.py --fail-on-policy-miss
 
+# Train a logistic head over frozen embeddings. Writes models/linear_head.json
+# only when it beats k-NN on the held-out harness.
+eval-train-linear:
+	cd services/router && python3 eval/train_linear_head.py
+
+# Partner demo: intent routing, retrieval, secret block, PII local_only.
+demo:
+	./scripts/partner_demo.sh
+
+# Render the Helm chart without installing (sanity check).
+helm-template:
+	helm template kubemind ./charts/kubemind --namespace kubemind
+
 # ── Linting ──────────────────────────────────────────────────────
 lint:
 	@echo "Linting Python services..."
-	cd services/router && ruff check src/ && mypy src/
-	cd services/mind && ruff check src/ && mypy src/
-	cd services/agents && ruff check src/ && mypy src/
-	cd services/sentinel && ruff check src/ && mypy src/
+	cd services/router && ruff check src/
+	cd services/mind && ruff check src/
+	cd services/agents && ruff check src/
+	cd services/sentinel && ruff check src/
+	$(MAKE) typecheck
 	@echo "Linting Go CLI..."
 	cd cmd/tricore && go vet ./...
 	@echo "Linting Dashboard..."
-	cd dashboard && npx next lint
+	cd dashboard && npm run lint
+
+typecheck:
+	MYPYPATH=services/router/src:shared/python mypy --ignore-missing-imports \
+		services/router/src/router/auth.py \
+		services/router/src/router/keymint_runtime.py \
+		services/router/src/router/zetakube_runtime.py \
+		services/router/src/router/policy.py \
+		shared/python/kubemind_auth shared/python/kubemind_policy
+
+security:
+	bandit -q -lll -r services/router/src services/mind/src services/agents/src services/sentinel/src
+	python3 scripts/check_secrets.py
+	pip-audit -r services/router/requirements.txt -r services/mind/requirements.txt -r services/agents/requirements.txt -r services/sentinel/requirements.txt
+	cd dashboard && npm audit --audit-level=high
+
+ci: lint test eval-ci security
 
 # ── Cleanup ──────────────────────────────────────────────────────
 clean:

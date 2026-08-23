@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "preferred provider allowed",
+      "preferredProvider": "openai",
+      "providerAllowlist": ["openai", "groq"],
+      "availableProviders": ["openai", "groq"],
+      "selectedProvider": "openai",
+      "reasonCode": "PREFERRED_PROVIDER_ALLOWED"
+    },
+    {
+      "name": "preferred provider unavailable",
+      "preferredProvider": "openai",
+      "providerAllowlist": ["openai", "groq"],
+      "availableProviders": ["groq"],
+      "selectedProvider": "groq",
+      "reasonCode": "PREFERRED_PROVIDER_UNAVAILABLE"
+    },
+    {
+      "name": "policy ordered without preference",
+      "preferredProvider": null,
+      "providerAllowlist": ["groq", "openai"],
+      "availableProviders": ["groq", "openai"],
+      "selectedProvider": "groq",
+      "reasonCode": "POLICY_ORDERED_SELECTION"
+    }
+  ]
+}

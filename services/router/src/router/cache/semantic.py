@@ -7,7 +7,7 @@ import json
 import math
 import os
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 import redis.asyncio as redis
@@ -58,6 +58,9 @@ class SemanticCache:
         ttl_seconds: int = 300,
         ollama_base_url: Optional[str] = None,
         partition_by_intent: bool = True,
+        embedding_prefix: str = "search_query: ",
+        backend: str = "redis",
+        pgvector_store: Any = None,
     ):
         self.client = redis_client
         self.enabled = enabled
@@ -67,6 +70,19 @@ class SemanticCache:
         self.scan_limit = scan_limit
         self.ttl_seconds = ttl_seconds
         self.partition_by_intent = partition_by_intent
+        # nomic-embed-text is trained with task prefixes and is measurably
+        # worse without one. One vector serves two tasks here -- symmetric
+        # cache lookup and classification -- so a single prefix is a
+        # compromise, taken knowingly to avoid embedding twice.
+        #
+        # `search_query:` is chosen because both sides of both comparisons are
+        # short user-style text. What actually matters is that the *same*
+        # prefix is applied to intent examples at index time, to prompts at
+        # query time, and to cache entries on store and lookup. A mismatch
+        # there degrades quality silently, with no error anywhere.
+        self.embedding_prefix = embedding_prefix
+        self.backend = backend
+        self.pgvector = pgvector_store
         self.ollama_base_url = (
             ollama_base_url
             or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -76,7 +92,10 @@ class SemanticCache:
 
     def bind_redis(self, client: Optional[redis.Redis]):
         self.client = client
-        self.is_ready = bool(client) and self.enabled
+        if self.backend == "pgvector":
+            self.is_ready = bool(self.pgvector and self.pgvector.is_ready) and self.enabled
+        else:
+            self.is_ready = bool(client) and self.enabled
 
     async def _http_client(self) -> httpx.AsyncClient:
         if self._http is None:
@@ -87,11 +106,26 @@ class SemanticCache:
         if self._http:
             await self._http.aclose()
             self._http = None
+        if self.pgvector:
+            self.pgvector.close()
+
+    @property
+    def embedding_namespace(self) -> str:
+        """Short hash of everything that changes what a vector means.
+
+        Vectors from different models or prefixes are not comparable, so they
+        must not share a key. Rolling the namespace retires stale entries
+        naturally via TTL instead of serving nonsense distances after a config
+        change.
+        """
+        raw = f"{self.embedding_model}|{self.embedding_prefix}"
+        return hashlib.sha256(raw.encode()).hexdigest()[:8]
 
     def _list_key(self, workspace_id: str, partition: Optional[str] = None) -> str:
+        base = f"km:sem:{self.embedding_namespace}:{workspace_id}"
         if self.partition_by_intent and partition:
-            return f"km:sem:{workspace_id}:{partition}"
-        return f"km:sem:{workspace_id}"
+            return f"{base}:{partition}"
+        return base
 
     async def embed(self, text: str) -> Optional[List[float]]:
         if not text or not text.strip():
@@ -100,7 +134,10 @@ class SemanticCache:
             client = await self._http_client()
             resp = await client.post(
                 f"{self.ollama_base_url}/api/embeddings",
-                json={"model": self.embedding_model, "prompt": text[:8000]},
+                json={
+                    "model": self.embedding_model,
+                    "prompt": f"{self.embedding_prefix}{text[:8000]}",
+                },
             )
             resp.raise_for_status()
             data = resp.json()
@@ -122,7 +159,7 @@ class SemanticCache:
         distance_threshold: Optional[float] = None,
     ) -> Optional[Tuple[Dict[str, Any], float, Dict[str, Any]]]:
         """Return (response_payload, distance, entry_meta) on hit."""
-        if not self.enabled or not self.client or not embedding:
+        if not self.enabled or not embedding:
             return None
 
         threshold = (
@@ -130,6 +167,18 @@ class SemanticCache:
             if distance_threshold is not None
             else self.distance_threshold
         )
+
+        if self.backend == "pgvector" and self.pgvector and self.pgvector.is_ready:
+            return self.pgvector.lookup(
+                workspace_id,
+                embedding,
+                sig=sig,
+                partition=partition if self.partition_by_intent else None,
+                distance_threshold=threshold,
+            )
+
+        if not self.client:
+            return None
 
         keys = [self._list_key(workspace_id, partition)]
         # A low-confidence request reads the shared bucket too, so prompts that
@@ -185,7 +234,23 @@ class SemanticCache:
         sig: Optional[str] = None,
         partition: Optional[str] = None,
     ) -> None:
-        if not self.enabled or not self.client or not embedding:
+        if not self.enabled or not embedding:
+            return
+
+        if self.backend == "pgvector" and self.pgvector and self.pgvector.is_ready:
+            self.pgvector.store(
+                workspace_id,
+                embedding,
+                response,
+                model=model,
+                prompt_preview=prompt_preview,
+                intent=intent,
+                sig=sig,
+                partition=partition if self.partition_by_intent else None,
+            )
+            return
+
+        if not self.client:
             return
         key = self._list_key(workspace_id, partition)
         # Avoid storing large recursive metadata
@@ -221,6 +286,26 @@ class SemanticCache:
     def from_config(cls, config: Dict[str, Any], redis_client: Optional[redis.Redis] = None) -> "SemanticCache":
         cache_cfg = config.get("cache", {})
         sem = cache_cfg.get("semantic", {})
+        backend = str(
+            sem.get("backend")
+            or cache_cfg.get("semantic_backend")
+            or os.environ.get("KUBEMIND_SEMANTIC_CACHE_BACKEND", "redis")
+        ).lower()
+
+        pgvector_store = None
+        if backend == "pgvector":
+            from router.cache.pgvector import PgVectorStore
+
+            pgvector_store = PgVectorStore(
+                dims=int(sem.get("embedding_dims", 768)),
+                ttl_seconds=int(cache_cfg.get("ttl_seconds", 300)),
+                max_entries=int(sem.get("max_entries_per_workspace", 10000)),
+            )
+            if not pgvector_store.connect():
+                # Degrade to Redis rather than running without a cache.
+                backend = "redis"
+                pgvector_store = None
+
         return cls(
             redis_client=redis_client,
             enabled=bool(sem.get("enabled", True)),
@@ -230,4 +315,7 @@ class SemanticCache:
             scan_limit=int(sem.get("scan_limit", 2000)),
             ttl_seconds=int(cache_cfg.get("ttl_seconds", 300)),
             partition_by_intent=bool(sem.get("partition_by_intent", True)),
+            embedding_prefix=sem.get("embedding_prefix", "search_query: "),
+            backend=backend,
+            pgvector_store=pgvector_store,
         )

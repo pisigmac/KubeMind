@@ -1,10 +1,12 @@
 # KubeMind Implementation Plan
 
 **Canonical product name:** KubeMind (formerly dual-branded as Tricore)  
-**Repo path:** `/home/oh20210736-ud/Documents/WorkSpace/tricore`  
-**Landing reference:** `landing_7` (marketing claims)  
-**Status:** Living plan — implement capability track; keep marketing honest until each exit criterion is met  
-**Last updated:** 2026-07-26
+**Repo path:** `/home/oh20210736-ud/Documents/WorkSpace/kubemind`  
+**Landing reference:** `landing_8` (intent-aware gateway; prior iterations under other `landing_*` dirs)  
+**Status:** Living plan — Phases 0–3 + intent/governance wedge **shipped**; Phase 5 Helm **partial**; Phases 4 / 6 / 7 open  
+**Last updated:** 2026-08-04  
+
+**Companion docs:** [`architecture.md`](./architecture.md) · [`design/intent-routing.md`](./design/intent-routing.md) · [`api.md`](./api.md)
 
 ---
 
@@ -23,77 +25,97 @@ It answers:
 | Concept | Canonical value |
 |---------|-----------------|
 | Product name | KubeMind |
-| K8s namespace | `kubemind-system` |
-| Helm release / chart | `kubemind` / `charts/kubemind` |
+| K8s namespace (shipped) | **`kubemind`** (chart + compose story). ADR 0001 still lists `kubemind-system` — amend ADR to match chart. |
+| Helm release / chart | `kubemind` / `charts/kubemind` (chart version `0.3.0`) |
 | Image registry prefix | `kubemind/` (or org-owned equivalent) |
-| CLI (canonical) | **`kmind`** (`bin/kmind`; optional `tricore` symlink for one release) |
+| CLI (canonical) | **`kmind`** (`bin/kmind`; `bin/tricore` symlink for one release) |
 | Public host ports | `9080` router · `9081` mind · `9082` agents · `9083` sentinel · `9000` dashboard |
+| Auth | `X-API-Key` → workspace (`shared/python/kubemind_auth`); open mode trusts `X-Workspace-ID` for local dev only |
 
-Legacy names to retire: `tricore` namespace, `switchboard`, `contextweave`, `deepagents`, `tracer`, `SwitchBoard` log prefixes.
+Legacy names to retire from **primary** docs/paths: `tricore` namespace, `switchboard`, `contextweave`, `deepagents`, `tracer`, `SwitchBoard` log prefixes. Raw files under `k8s/` remain until Phase 5 cleanup finishes.
 
 ---
 
-## 2. Current inventory (codebase fact)
+## 2. Current inventory (codebase fact) — 2026-08-04
 
 ### 2.1 Services that exist
 
 | Service | Port | Path | Language | Role today |
 |---------|------|------|----------|------------|
-| **router** | 9080 | `services/router` | Python FastAPI | LLM gateway, exact Redis cache, circuit breaker, rate limit, usage |
-| **mind** | 9081 | `services/mind` | Python FastAPI | Knowledge ingest, hybrid search (vector+keyword+graph), embeddings |
-| **agents** | 9082 | `services/agents` | Python FastAPI | Mission planner + tools (fs/shell/web/knowledge) |
-| **sentinel** | 9083 | `services/sentinel` | Python FastAPI | Span store (SQLite), metrics, WebSocket stream |
-| **dashboard** | 9000 | `dashboard/` | Next.js | Operator UI |
-| **CLI** | — | `cmd/tricore` | Go | Stack control (`tricore` binary) |
+| **router** | 9080 | `services/router` | Python FastAPI | Intent + policy gateway, exact/semantic cache, profiles, cascade, metrics |
+| **mind** | 9081 | `services/mind` | Python FastAPI | Knowledge ingest, hybrid search (vector+keyword+graph), pgvector |
+| **agents** | 9082 | `services/agents` | Python FastAPI | Mission planner + tools (fs/shell/web/knowledge); **not** K8s-native yet |
+| **sentinel** | 9083 | `services/sentinel` | Python FastAPI | Spans, redaction/guardrails, Prometheus, audit ledger, WebSocket stream |
+| **dashboard** | 9000 | `dashboard/` | Next.js | Operator UI (not end-user chat) |
+| **CLI** | — | `cmd/tricore` → `bin/kmind` | Go | Stack/ops control |
+| **Shared libs** | — | `shared/python/kubemind_auth`, `kubemind_policy` | Python | API-key tenancy; redaction + injection detectors |
+| **Schemas** | — | `shared/schemas/` | JSON Schema | Portable contracts for SDKs/docs |
+| **Helm** | — | `charts/kubemind/` | Helm | Control-plane chart (partial vs full Phase 5 exit) |
+| **Marketing** | — | `landing_8/` | Next.js 15 | Partner landing (not in compose) |
 
-Compose stack (`docker-compose.yml`): Postgres `:9432`, Redis `:9379`, Ollama `:9434`, all four services + dashboard.
+Compose stack (`docker-compose.yml`): Postgres+pgvector `:9432`, Redis `:9379`, Ollama `:9434`, four services + dashboard.
 
 ### 2.2 What already works (do not rebuild)
 
-- Router: `POST /v1/chat/completions`, `POST /v1/embeddings`, provider health, usage, cache clear/stats
-- Mind: `POST /v1/ingest`, `POST /v1/query`, `GET /v1/graph`, workspace scoping, connectors (doc/git/web)
-- Agents: `POST /v1/missions`, tools invoke, planner loop calling router/mind/sentinel
-- Sentinel: `POST /v1/spans`, query, metrics, export, `WS /v1/stream`
-- Local-first Ollama path in compose
-- Unit tests under each service’s `tests/`
+**Router**
+- `POST /v1/chat/completions`, `POST /v1/route`, `POST /v1/embeddings`, `POST /v1/classify`
+- Exact Redis cache + semantic cache (Redis list or pgvector); model-aware / intent-partitioned keys
+- Intent: rules prior + k-NN (+ optional linear head), margin confidence, abstain, `_background` decoy
+- Route profiles + sensitivity policy overlay (`allow` / `redact` / `local_only` / `block`)
+- Mind retrieval for retrieval intents; cascade escalation; decision records → sentinel
+- Providers: Ollama, vLLM, DeepSeek-local, OpenAI-compat, Anthropic (env-gated)
+- `/metrics`, `/v1/routing/report`, feedback path; eval under `services/router/eval/`
 
-### 2.3 Critical gaps vs landing
+**Mind**
+- `POST /v1/ingest`, `POST /v1/query`, `POST /v1/memory/query`, `GET /v1/graph`
+- pgvector HNSW in default compose; workspace scoping; connectors (doc/git/web)
 
-| Landing claim | Code reality | Severity |
-|---------------|--------------|----------|
-| Semantic cache &lt;4ms | Exact-key Redis only | **P0** |
-| `POST /v1/route` | Missing (use chat completions) | **P0** |
-| Intent classification | Missing | P1 |
-| DeepSeek-R1 / vLLM providers | Missing | P1 |
-| Real pgvector HNSW | JSON embeddings; optional extension try | P1 |
-| `POST /v1/memory/query` | Missing alias | P1 |
-| K8s autonomous agents / OPA / Temporal | Generic tools only | P1 |
+**Agents**
+- `POST /v1/missions`, tools invoke, planner loop calling router/mind/sentinel
+
+**Sentinel**
+- Spans, redaction, injection heuristics, `/metrics`, OTLP optional, `/v1/telemetry/traces`
+- Hash-chained audit ledger (`/v1/audit/verify`, head, entries, retention)
+- `WS /v1/stream`
+
+**Platform**
+- Local-first Ollama path; `make up` / `make demo` (`scripts/partner_demo.sh`)
+- Unit/eval coverage on router + sentinel; `bin/kmind` builds from `cmd/tricore`
+- Docs: `docs/architecture.md`, `docs/design/intent-routing.md`, `docs/api.md`
+
+### 2.3 Remaining gaps vs landing / MVP
+
+| Claim / goal | Code reality | Severity |
+|--------------|--------------|----------|
+| K8s autonomous agents / OPA / Temporal | Generic tools only; no cluster client / HITL | **P1** |
 | `POST /v1/task/dispatch` | Missing alias | P1 |
-| PII redaction / injection scoring | Missing | P1 |
-| Prometheus / OTLP | Missing | P1 |
-| Helm chart | Missing entirely | **P0** for deploy story |
-| K8s manifests | Stale names (`switchboard`…) | P0 for deploy |
-| Python/Go/TS SDKs | Missing | P1 |
+| Helm “install and healthy on kind” | Chart scaffold + deployments exist; no `verify-helm-install.sh`; legacy `k8s/` still present | P1 |
+| Python/Go/TS SDKs | Missing (`sdk/` not created) | P1 |
+| CLI ↔ dashboard shared clients | Thin ad-hoc HTTP; Phase 6 SDKs intended | P1 |
+| Dashboard API keys | Still often `X-Workspace-ID: default` | P1 |
 | mTLS / SPIFFE / Envoy | Missing | P2 |
-| ClickHouse / eBPF / Rust rewrite | Missing | P2 / non-goal MVP |
-| Product naming consistency | Tricore everywhere | P0 hygiene |
+| ClickHouse / eBPF / Rust rewrite | Non-goal MVP | P2 |
+| ADR namespace vs chart | ADR says `kubemind-system`; shipped chart uses `kubemind` | Docs hygiene |
+
+**Shipped (no longer gaps):** semantic cache, `/v1/route`, intent classification, vLLM/DeepSeek configs, pgvector mind path, `/v1/memory/query`, PII/injection controls, Prometheus on router+sentinel, Helm chart present, product naming largely KubeMind.
 
 ---
 
 ## 3. Strategy
 
-**Track A — Capability (this plan):** Implement features in phases below under KubeMind naming.
+**Track A — Capability (this plan):** Finish remaining phases under KubeMind naming.
 
-**Track B — Truth (ongoing):** Do not advertise Rust/gRPC/Temporal/ClickHouse/eBPF until real. Prefer landing tech labels: Python, FastAPI, Postgres, Redis, Ollama/vLLM, Helm.
+**Track B — Truth (ongoing):** Do not advertise Rust/gRPC/Temporal/ClickHouse/eBPF until real. Prefer landing tech labels: Python, FastAPI, Postgres, Redis, Ollama/vLLM, Helm. Landing (`landing_8`) must stay honest to §2.
 
 **MVP definition of “landing-credible”:**
 
-1. Semantic cache path works end-to-end  
-2. Landing API aliases exist  
-3. `helm install kubemind` brings up healthy control plane  
-4. At least one SDK (`python`) works against local stack  
-5. Basic PII redaction + Prometheus metrics on sentinel  
-6. Agents can read Kubernetes resources (list/logs)
+1. [x] Semantic cache path works end-to-end  
+2. [x] Core landing API aliases (`/v1/route`, `/v1/memory/query`, `/v1/telemetry/traces`)  
+3. [~] `helm install kubemind` brings up healthy control plane — chart exists; kind verify script + legacy retire still open  
+4. [ ] At least one SDK (`python`) works against local stack  
+5. [x] Basic PII redaction + Prometheus metrics  
+6. [ ] Agents can read Kubernetes resources (list/logs)  
+7. [x] Intent-aware routing + enforced governance (see §5b)
 
 ---
 
@@ -116,8 +138,8 @@ Lock naming, document public APIs, freeze legacy paths for rewrite.
 Content must include:
 
 - Product name KubeMind
-- Namespace `kubemind-system`
-- Service DNS: `router.kubemind-system.svc`, etc.
+- Namespace `kubemind` (shipped; ADR originally said `kubemind-system` — amend)
+- Service DNS: `router.kubemind.svc`, etc.
 - Env var prefix migration: prefer `KUBEMIND_*`, accept `TRICORE_*` / legacy for one release
 - Image names: `kubemind/router`, `kubemind/mind`, `kubemind/agents`, `kubemind/sentinel`, `kubemind/dashboard`
 - CLI: **`kmind`** entrypoint; `tricore` may remain a symlink for 1 release
@@ -132,7 +154,7 @@ For each service, document:
 
 | Method | Path | Purpose | Request body summary | Auth header |
 |--------|------|---------|----------------------|-------------|
-| … | … | … | … | `X-Workspace-Id` or equivalent |
+| … | … | … | … | `X-API-Key` (preferred) or `X-Workspace-ID` in open mode |
 
 Generate by reading:
 
@@ -169,7 +191,7 @@ Map:
 | `contextweave` | `mind` |
 | `deepagents` | `agents` |
 | `tracer` | `sentinel` |
-| namespace `tricore` | `kubemind-system` |
+| namespace `tricore` | `kubemind` |
 
 **Acceptance:** Document exists; Phase 5 tasks reference it.
 
@@ -278,29 +300,13 @@ Every chat/route response must include:
 
 **Acceptance:** Contract documented in `docs/api.md`; tests assert keys present.
 
-#### T1.4 — Intent classification (lightweight)
+#### T1.4 — Intent classification (lightweight) — **superseded by §5b**
 
 **File:** `services/router/src/router/intent.py`
 
-MVP approach (choose one, document in code):
+Original MVP options (keyword/centroid or small classify prompt) were completed as a first cut, then replaced by the shipped intent + governance wedge (§5b): rules prior + k-NN over examples, margin confidence, route profiles, and a sensitivity policy overlay that must not depend on the classifier.
 
-- **A (fast):** keyword/heuristic + optional embedding centroid labels for `code | rag | security | log | general`  
-- **B (better):** small classify prompt to local model only when heuristics uncertain  
-
-Config in `gateway.yaml`:
-
-```yaml
-routing:
-  intent_enabled: true
-  prefer_targets:
-    code: deepseek-r1-local
-    rag: ollama
-    security: ollama
-    log: vllm-local
-    general: ollama
-```
-
-**Acceptance:** Intent appears in response metadata; prefer_targets influences provider selection when target healthy.
+Historical acceptance (still true): intent appears in response metadata; routing targets influence provider selection when healthy.
 
 #### T1.5 — Provider additions
 
@@ -371,6 +377,47 @@ Keep `POST /v1/chat/completions` as primary OpenAI-compatible path.
 
 **Note:** End-to-end semantic hit against live Ollama requires `make up` + `nomic-embed-text` pulled.  
 
+---
+
+## 5b. Phase 1b — Intent-aware gateway & governance (shipped)
+
+**Status:** Done (2026-08)  
+**Paths:** `services/router`, `services/sentinel`, `shared/python/`, `docs/design/intent-routing.md`  
+**Depends on:** Phase 1 semantic cache + `/v1/route`
+
+### Design invariant
+
+**A governance decision must never depend on the intent classifier.**  
+`router.policy` does not import `router.intent`. Detectors live in `shared/python/kubemind_policy` (router inline + sentinel at ingest).
+
+### What shipped
+
+| Area | Location / behavior |
+|------|---------------------|
+| API-key tenancy | `shared/python/kubemind_auth` — workspace from `X-API-Key`; service key for in-cluster |
+| Intent classifier | Rules prior + k-NN examples; margin confidence; abstain → `general`; `_background` decoy |
+| Route profiles | `gateway.yaml` profiles (pool, model, params, cache, retrieval) |
+| Policy overlay | `allow` / `redact` / `local_only` / `block`; `local_only` never falls back to cloud |
+| Embed once | Exact cache first; single embed shared by intent + semantic cache |
+| Cache | Model-aware match keys; intent stored on entries; intent partitioning when confident |
+| Mind retrieval | Router client for retrieval intents |
+| Decision record | Per-request record → sentinel ledger + routing metrics |
+| Audit ledger | Hash-chained; `/v1/audit/verify`, head, entries, retention/legal hold |
+| Cascade | Optional cheap-local-first escalation |
+| Eval | `services/router/eval/` — labeled set, consequence-weighted harness, threshold sweep, linear-head gate |
+| Demo | `make demo` / `scripts/partner_demo.sh` |
+| Docs | `docs/architecture.md`, `docs/design/intent-routing.md`, `docs/api.md` updates |
+
+### Exit criteria
+
+- [x] Classifier + profiles + policy overlay on chat/route path  
+- [x] Shared policy package used by router and sentinel  
+- [x] Workspace bound to API keys across router/mind/agents/sentinel  
+- [x] Audit ledger verify path  
+- [x] Eval harness + operating point documented  
+- [x] Partner demo script  
+
+**Do not rebuild** this wedge; extend via `gateway.yaml` intents/profiles and eval dataset growth.
 
 ---
 
@@ -602,7 +649,7 @@ Earn “K8s agents” claim with real cluster tools + HITL for mutations — **n
 
 RBAC: document minimal ClusterRole for read-only default; mutating role optional.
 
-**Acceptance:** Integration test against kind/minikube or mocked client; mission can list pods in `kubemind-system`.
+**Acceptance:** Integration test against kind/minikube or mocked client; mission can list pods in `kubemind`.
 
 #### T4.2 — Human-in-the-loop gate
 
@@ -637,7 +684,7 @@ Maps to mission create/run:
 {
   "prompt": "...",
   "human_in_the_loop": true,
-  "namespace": "kubemind-system"
+  "namespace": "kubemind"
 }
 ```
 
@@ -670,10 +717,11 @@ State clearly:
 **Duration:** 1–1.5 weeks  
 **Path:** `charts/kubemind/`, rewrite `k8s/`  
 **Depends on:** Phase 0; images buildable  
+**Status:** **Partial** — chart `0.3.0` installs the four services + dashboard + Postgres/Redis; remaining exit items below  
 
 ### Goals
 
-Make `helm install kubemind kubemind/kubemind -n kubemind-system` real.
+Make `helm upgrade --install kubemind ./charts/kubemind -n kubemind --create-namespace` the primary deploy path (shipped namespace: **`kubemind`**).
 
 ### Tasks (detailed)
 
@@ -704,31 +752,23 @@ charts/kubemind/
   README.md
 ```
 
-**values.yaml** must support (landing-aligned):
+**values.yaml** (shipped shape — see `charts/kubemind/values.yaml`):
 
 ```yaml
-global:
-  namespace: kubemind-system
-  airGapped: false
-  imageRegistry: ""
-
-router:
-  replicaCount: 2
-  port: 9080
-  semanticCache:
-    enabled: true
-mind:
-  replicaCount: 2
-  port: 9081
-agents:
-  replicaCount: 1
-  port: 9082
-sentinel:
-  replicaCount: 1
-  port: 9083
+namespace: kubemind
+image:
+  router: kubemind/router:0.3.0
+  # mind, agents, sentinel, dashboard…
+replicas:
+  router: 2
+  mind: 1
+  agents: 1
+  sentinel: 1
+  dashboard: 1
+# auth.apiKeys / serviceKey / adminKey, semanticCacheBackend, postgres, redis…
 ```
 
-**Acceptance:** `helm lint charts/kubemind` passes.
+**Acceptance:** `helm lint charts/kubemind` / `make helm-template` passes. **Done** for scaffold + combined Deployment/Service template.
 
 #### T5.2 — Image build tags
 
@@ -768,12 +808,23 @@ Checks:
 
 **Acceptance:** Scripted smoke on kind.
 
+### Phase 5 progress
+
+| Task | Status |
+|------|--------|
+| T5.1 Chart scaffolding + deployments/services/config/secrets/ingress | **Done** (`charts/kubemind/`) |
+| T5.2 Image tags via `make build` → `kubemind/*` | **Done** |
+| T5.3 Retire legacy `k8s/` manifests from primary path | **Open** (files still at `k8s/*.yaml`) |
+| T5.4 HPA on router | **Open** (probes exist on deployments) |
+| T5.5 `scripts/verify-helm-install.sh` + `make helm-verify` | **Open** (`make helm-template` only) |
+
 ### Phase 5 exit criteria
 
-- [ ] Chart installs cleanly  
-- [ ] Four services healthy  
-- [ ] Legacy names retired from primary path  
-- [ ] README deploy section uses Helm  
+- [x] Chart scaffolds and templates cleanly (`make helm-template`)  
+- [~] Four services healthy on kind — needs verify script / runbook proof  
+- [ ] Legacy names retired from primary path (`k8s/` → `k8s/legacy/` or delete)  
+- [x] Chart README documents Helm install  
+- [ ] Amend ADR 0001 namespace to `kubemind` (or document alias)  
 
 ---
 
@@ -888,10 +939,19 @@ Phase 1 — Router
 [x] T1.1 semantic cache design note
 [x] T1.2 SemanticCache implementation
 [x] T1.3 response metadata
-[x] T1.4 intent classifier
+[x] T1.4 intent classifier (superseded/extended by Phase 1b)
 [x] T1.5 vLLM / DeepSeek / Anthropic providers
 [x] T1.6 POST /v1/route
 [x] T1.7 tests + sentinel attributes + log rename
+
+Phase 1b — Intent + governance
+[x] API-key workspace binding (kubemind_auth)
+[x] Shared kubemind_policy (redact + guardrails)
+[x] k-NN intent + profiles + policy overlay
+[x] Embed-once + model/intent-aware cache
+[x] Decision records + audit ledger
+[x] Eval harness + partner demo
+[x] architecture + intent-routing docs
 
 Phase 2 — Mind
 [x] T2.1 pgvector first-class + HNSW
@@ -916,16 +976,17 @@ Phase 4 — Agents
 [ ] T4.5 k8s-scope honesty doc
 
 Phase 5 — Helm
-[ ] T5.1 chart scaffold
-[ ] T5.2 image tags Makefile
+[x] T5.1 chart scaffold + deployments
+[x] T5.2 image tags Makefile
 [ ] T5.3 retire legacy k8s
-[ ] T5.4 HPA + probes
+[ ~] T5.4 probes done; HPA open
 [ ] T5.5 verify script
+[ ] Amend ADR namespace → kubemind
 
 Phase 6 — SDKs
 [ ] T6.1 Python
-[ ] T6.2 Go
-[ ] T6.3 TypeScript
+[ ] T6.2 Go (CLI imports sdk)
+[ ] T6.3 TypeScript (dashboard uses sdk)
 [ ] T6.4 versioning docs
 
 Phase 7 — Hard security (optional)
@@ -959,22 +1020,26 @@ Phase 7 — Hard security (optional)
 
 ## 15. Success metrics
 
-| Metric | Target |
-|--------|--------|
-| Core services exist | 4/4 (done) |
-| Landing API aliases | `/v1/route`, `/v1/memory/query`, `/v1/task/dispatch`, `/v1/telemetry/traces` |
-| Semantic cache | Demonstrable hit with metadata |
-| Helm smoke | All `/health` OK on kind |
-| SDKs | ≥1 language fully; goal 3 |
-| Security basics | Redaction + Prometheus |
+| Metric | Target | Status |
+|--------|--------|--------|
+| Core services exist | 4/4 | Done |
+| Landing API aliases | `/v1/route`, `/v1/memory/query`, `/v1/telemetry/traces`, `/v1/task/dispatch` | 3/4 (`task/dispatch` open) |
+| Semantic cache | Demonstrable hit with metadata | Done |
+| Intent + governance | Classify + policy + ledger | Done |
+| Helm smoke | All `/health` OK on kind | Partial (chart yes; verify script no) |
+| SDKs | ≥1 language fully; goal 3 | Open |
+| Security basics | Redaction + Prometheus | Done |
+| K8s agent tools | List/logs + HITL mutations | Open |
 
 ---
 
 ## 16. Immediate next actions
 
-1. Merge this file as the living plan under `docs/KUBEMIND_IMPLEMENTATION_PLAN.md` (**done when committed**).  
-2. Execute **Phase 0** (ADR + API inventory + README branding).  
-3. Start **Phase 1** (semantic cache + `/v1/route`) — highest credibility unlock for the landing story.
+1. **Phase 5 finish:** move/retire `k8s/` legacy manifests; add HPA; add `scripts/verify-helm-install.sh` + `make helm-verify`; amend ADR namespace to `kubemind`.  
+2. **Phase 4:** Kubernetes read tools + HITL for mutations + `/v1/task/dispatch` + honesty doc (`docs/agents/k8s-scope.md`).  
+3. **Phase 6:** Python SDK first (`RouterClient.route`); then Go (CLI) and TypeScript (dashboard).  
+4. Keep **`landing_8`** claims tied to §2.3 — do not advertise Temporal/OPA/mTLS/SDKs until shipped.  
+5. Optional: Phase 7 NetworkPolicies once Helm verify is green.
 
 ---
 
@@ -983,11 +1048,17 @@ Phase 7 — Hard security (optional)
 | Path | Notes |
 |------|-------|
 | `services/*` | Control plane implementation |
+| `shared/python/kubemind_auth`, `kubemind_policy` | Shared auth + detectors |
+| `shared/schemas/` | Portable JSON Schema contracts |
 | `docker-compose.yml` | Local dev stack |
-| `k8s/` | Legacy manifests → replace via chart |
-| `charts/kubemind/` | **To create** (Phase 5) |
+| `k8s/` | Legacy manifests — retire in Phase 5 |
+| `charts/kubemind/` | **Exists** (v0.3.0); finish verify + HPA + legacy retire |
 | `sdk/` | **To create** (Phase 6) |
-| `cmd/tricore` | CLI; rename/alias in Phase 0/6 |
-| `landing_7/` | Marketing only — update claims as exit criteria met |
-| `docs/api.md` | **To create** (Phase 0) |
-| `docs/adr/` | **To create** (Phase 0) |
+| `cmd/tricore` → `bin/kmind` | CLI; Go SDK import in Phase 6 |
+| `dashboard/` | Operator UI; TS SDK in Phase 6 |
+| `landing_8/` | Marketing — intent-aware gateway story |
+| `scripts/partner_demo.sh` | Partner demo (`make demo`) |
+| `docs/api.md` | Live API inventory |
+| `docs/architecture.md` | System map + pipeline |
+| `docs/design/intent-routing.md` | Classifier / policy / eval |
+| `docs/adr/0001-kubemind-naming.md` | Naming ADR (namespace amend pending) |

@@ -66,7 +66,7 @@ class OllamaProvider(BaseProvider):
                     "total_tokens": prompt_tokens + completion_tokens,
                 },
             }
-        except Exception as e:
+        except Exception:
             self.record_failure()
             raise
 
@@ -102,7 +102,7 @@ class OllamaProvider(BaseProvider):
                     "total_tokens": sum(len(inp.split()) for inp in inputs),
                 },
             }
-        except Exception as e:
+        except Exception:
             self.record_failure()
             raise
 

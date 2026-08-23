@@ -2,7 +2,7 @@ import os
 import json
 import sqlite3
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class TraceStore:
     def __init__(self):

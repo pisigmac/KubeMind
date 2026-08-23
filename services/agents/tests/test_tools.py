@@ -1,7 +1,18 @@
 import pytest
-import os
-import tempfile
 from agents.tools import ToolRegistry, FilesystemTool, ShellTool, WebSearchTool, CodeAnalyzerTool
+
+class TestToolRegistry:
+    @pytest.mark.asyncio
+    async def test_load_and_list_schema(self):
+        registry = ToolRegistry()
+        await registry.load()
+        schemas = registry.list_schema()
+        assert isinstance(schemas, list)
+        assert len(schemas) > 0
+        names = {s["name"] for s in schemas}
+        assert "filesystem" in names
+        assert "shell" in names
+
 
 class TestFilesystemTool:
     @pytest.mark.asyncio
@@ -53,6 +64,13 @@ class TestShellTool:
         result = await tool.run({"command": "nc -l 8080"}, "test")
         assert "allowlist" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_shell_metacharacters_are_not_interpreted(self):
+        tool = ShellTool()
+        result = await tool.run({"command": "echo safe; uname"}, "test")
+        assert result["returncode"] == 0
+        assert result["stdout"].strip() == "safe; uname"
+
 class TestWebSearchTool:
     @pytest.mark.asyncio
     async def test_search(self):
@@ -64,14 +82,12 @@ class TestWebSearchTool:
 class TestCodeAnalyzerTool:
     @pytest.mark.asyncio
     async def test_analyze_python(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write("import os\n\ndef foo():\n    x = 1\n")
-            path = f.name
+        # CodeAnalyzerTool resolves paths under /tmp/tricore/{workspace_id}.
+        # Write the fixture through FilesystemTool, then analyze by relative path.
+        fs = FilesystemTool()
+        await fs.run({"path": "sample.py", "action": "write", "content": "import os\n\ndef foo():\n    x = 1\n"}, "test")
 
-        try:
-            tool = CodeAnalyzerTool()
-            result = await tool.run({"path": path, "fix": False}, "test")
-            assert "issues" in result
-            assert "returncode" in result
-        finally:
-            os.unlink(path)
+        tool = CodeAnalyzerTool()
+        result = await tool.run({"path": "sample.py", "fix": False}, "test")
+        assert "issues" in result
+        assert "returncode" in result

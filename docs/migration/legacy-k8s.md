@@ -60,7 +60,11 @@ These remain valid; prefer documenting them under KubeMind ops docs:
 - `REDIS_URL`
 - `OLLAMA_BASE_URL`
 - `ROUTER_URL`, `MIND_URL`, `SENTINEL_URL`
-- Provider keys: `GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
+- `KUBEMIND_CREDENTIAL_MODE=keymint` for production. Provider credentials live
+  in KeyMint Connections and must not be injected into KubeMind.
+- `KUBEMIND_CREDENTIAL_MODE=direct` is an explicit self-hosted/development
+  compatibility mode. It requires deployment-secret provider keys, is reported
+  by `/health`, and is never an automatic fallback.
 
 Optional later: `KUBEMIND_ROUTER_URL` as alias.
 

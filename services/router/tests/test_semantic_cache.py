@@ -50,6 +50,55 @@ class TestSemanticCacheConfig:
         assert sc.enabled is False
 
 
+class TestEmbeddingNamespace:
+    """Vectors from different models or prefixes are not comparable."""
+
+    def test_prefix_change_rolls_the_namespace(self):
+        a = SemanticCache(embedding_prefix="search_query: ")
+        b = SemanticCache(embedding_prefix="classification: ")
+        assert a.embedding_namespace != b.embedding_namespace
+        assert a._list_key("ws") != b._list_key("ws")
+
+    def test_model_change_rolls_the_namespace(self):
+        a = SemanticCache(embedding_model="nomic-embed-text")
+        b = SemanticCache(embedding_model="mxbai-embed-large")
+        assert a._list_key("ws") != b._list_key("ws")
+
+    def test_same_settings_share_a_namespace(self):
+        assert SemanticCache()._list_key("ws") == SemanticCache()._list_key("ws")
+
+    def test_intent_partition_nests_under_namespace(self):
+        sc = SemanticCache()
+        assert sc._list_key("ws", "code").startswith(sc._list_key("ws"))
+
+    def test_prefix_is_configurable(self):
+        sc = SemanticCache.from_config(
+            {"cache": {"semantic": {"embedding_prefix": "classification: "}}}
+        )
+        assert sc.embedding_prefix == "classification: "
+
+    @pytest.mark.asyncio
+    async def test_prefix_is_applied_to_the_embed_call(self, monkeypatch):
+        sent = {}
+
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"embedding": [0.1, 0.2]}
+
+        class FakeClient:
+            async def post(self, url, json=None):
+                sent.update(json or {})
+                return FakeResp()
+
+        sc = SemanticCache(embedding_prefix="search_query: ")
+        monkeypatch.setattr(sc, "_http_client", AsyncMock(return_value=FakeClient()))
+        await sc.embed("why is my pod crashing")
+        assert sent["prompt"] == "search_query: why is my pod crashing"
+
+
 class TestSemanticCacheLookup:
     @pytest.mark.asyncio
     async def test_lookup_hit(self, mock_redis):

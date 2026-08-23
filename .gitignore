@@ -66,8 +66,13 @@ services/router/eval/.embeddings.json
 
 # Marketing/front-end experiments. Separate projects, four of which carry their
 # own git history and would commit as broken gitlinks.
+# landing_8 is the current intent-routing marketing site and is tracked.
 /landing/
 /landing_[0-9]*/
+!/landing_8/
+!/landing_8/**
+/landing_8/.next/
+/landing_8/node_modules/
 
 # Agent tool skill packs. Nineteen byte-identical copies of the same vendor
 # pack (~2,700 files), machine-generated and not project source. Kept on disk
@@ -82,7 +87,9 @@ services/router/eval/.embeddings.json
 .cursor/
 .factory/
 .gemini/
-.github/
+.github/**
+!.github/workflows/
+!.github/workflows/kubemind-ci.yml
 .kilocode/
 .kiro/
 .opencode/

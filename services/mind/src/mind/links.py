@@ -1,6 +1,5 @@
 import os
-from typing import List, Dict, Any
-from collections import Counter
+from typing import List, Dict
 
 class LinkDetector:
     def __init__(self, store):

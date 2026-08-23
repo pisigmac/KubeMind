@@ -4,20 +4,37 @@ import sqlite3
 import threading
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from contextlib import contextmanager
 
 class TraceStore:
-    def __init__(self):
-        self.db_path = os.environ.get("TRACER_DB_PATH", "./data/sentinel.db")
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+    def __init__(self, db_path: Optional[str] = None):
+        # Accepting the path is what makes this testable. Callers previously
+        # had to construct the store and then reassign `db_path`, by which
+        # point a connection to the default file was already open and cached,
+        # so every test shared one database.
+        self.db_path = db_path or os.environ.get("TRACER_DB_PATH", "./data/sentinel.db")
+        directory = os.path.dirname(self.db_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         self._local = threading.local()
         self._init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._local.conn.row_factory = sqlite3.Row
+            conn = sqlite3.connect(
+                self.db_path, check_same_thread=False, timeout=10
+            )
+            conn.row_factory = sqlite3.Row
+            # Readers no longer block on a writer, which is what produced the
+            # intermittent "database is locked" failures.
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn = conn
         return self._local.conn
+
+    def close(self):
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
 
     def _init_db(self):
         conn = self._get_conn()

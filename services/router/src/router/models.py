@@ -21,6 +21,12 @@ class ChatRequest(BaseModel):
     preferred_target: Optional[str] = None
     fallback: Optional[str] = None
     enable_cache: Optional[bool] = True
+    # cost: cheapest capable. quality: best `quality_rank`. latency: lowest
+    # observed latency. Ignored when the resolved profile names a pool, since
+    # pool order is an explicit preference.
+    policy: Optional[str] = Field(default="cost", pattern="^(cost|quality|latency)$")
+    # Soft budget: providers with measured latency above it are deprioritised.
+    max_latency_ms: Optional[int] = Field(default=None, ge=1)
 
 
 class ChatResponse(BaseModel):
@@ -79,6 +85,7 @@ class RouteRequest(BaseModel):
     fallback: Optional[str] = None
     enable_cache: bool = True
     max_latency_ms: Optional[int] = Field(default=None, ge=1)
+    policy: Optional[str] = Field(default="cost", pattern="^(cost|quality|latency)$")
     model: Optional[str] = None
     temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(default=None, ge=1)
@@ -130,7 +137,9 @@ class DecisionRecord(BaseModel):
     egress_class: str = "any"
 
     profile: Optional[str] = None
+    considered_pool: List[str] = []
     eligible_pool: List[str] = []
+    route_reason_code: Optional[str] = None
     route_target: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
@@ -142,6 +151,9 @@ class DecisionRecord(BaseModel):
     cache_hit: bool = False
     cache_type: Optional[str] = None
     billable: bool = True
+
+    cascade_escalated: bool = False
+    cascade_reason: Optional[str] = None
 
     latency_ms: float = 0.0
     status: str = "ok"

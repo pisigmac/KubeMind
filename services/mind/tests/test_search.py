@@ -36,7 +36,7 @@ class TestHybridSearcher:
 
         # Verify filters passed through
         call_args = mock_store.search_by_vector.call_args
-        assert call_args[1]["filters"] == {"type": "code"}
+        assert call_args[0][2] == {"type": "code"}
 
     def test_merge_results(self, searcher):
         vector = [{"id": "1", "type": "doc", "content": "a", "metadata": {}, "score": 0.9}]

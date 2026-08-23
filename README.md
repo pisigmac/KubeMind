@@ -1,157 +1,146 @@
 # KubeMind
 
-**Kubernetes-native AI operating infrastructure** — self-hosted control plane for LLM routing, hybrid knowledge memory, agents, and trace observability.
+The reproducible quality-gate commands, measured local results, and release boundaries are documented in [docs/CI_BASELINE.md](docs/CI_BASELINE.md). Sellable SKU and forbidden claims: [docs/PRODUCT.md](docs/PRODUCT.md).
 
-> **Note:** The repository directory may still be named `tricore` on disk. The **product name is KubeMind**. See [docs/adr/0001-kubemind-naming.md](docs/adr/0001-kubemind-naming.md).
+**Status:** developer preview on branch `dev`. Not a production-certified product. Do not invoice against Compose `direct` mode.
+
+Self-hosted AI gateway: classify prompts for purpose and sensitivity, route to an allowed model, and record the decision. Paid/production installs set `KUBEMIND_DEPLOYMENT=production` (KeyMint credentials, API keys required). Direct provider keys are laptop/migration only. Agents are preview and off in Helm.
+
+> Product name is **KubeMind** (legacy “Tricore” / `switchboard` names are retired). See [docs/adr/0001-kubemind-naming.md](docs/adr/0001-kubemind-naming.md).
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  kmind CLI  |  Next.js Dashboard (port 9000)               │
+│  kmind CLI  ·  Dashboard :9000  ·  landing_8 (marketing)    │
 ├─────────────────────────────────────────────────────────────┤
-│  router   :9080  →  LLM gateway + cache + circuit breaker  │
+│  router   :9080  →  Intent + policy gateway + cache         │
 │  mind     :9081  →  Knowledge graph + hybrid search          │
-│  agents   :9082  →  Agent engine + planning + tools          │
-│  sentinel :9083  →  Observability + WebSocket streaming      │
+│  agents   :9082  →  Missions, planning, tools                 │
+│  sentinel :9083  →  Traces + hash-chained audit ledger       │
 ├─────────────────────────────────────────────────────────────┤
-│  PostgreSQL (:9432) | Redis (:9379) | Ollama (:9434)         │
+│  PostgreSQL+pgvector · Redis · Ollama                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Target K8s namespace:** `kubemind-system` (Helm chart in progress — see implementation plan).
+**Architecture deep-dive:** [docs/architecture.md](docs/architecture.md)
+**Intent + governance design:** [docs/design/intent-routing.md](docs/design/intent-routing.md)
+
+## Why it is different
+
+| Other gateways | KubeMind |
+|----------------|----------|
+| Route by model name or static rules | Route by **classified intent** → full route profile |
+| Observe PII/injection after the fact | **Enforce** sensitivity *before* dispatch |
+| No memory service | Retrieval intents **augment from mind** |
+| Mutable logs | Tamper-evident **audit ledger** |
+
+A governance decision never depends on the intent classifier. Wrong intent costs quality; missed sensitivity is a breach.
 
 ## Quickstart
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/pisigmac/tricore.git
-cd tricore
 cp .env.example .env
-# Edit .env — add free-tier API keys if you have them
-
-# 2. Start everything
 make up
-
-# 3. Verify
 make status
 
-# 4. Build CLI and run your first agent mission
-make cli
-./bin/kmind agent run "Write a Python function to calculate factorial"
+# Dry-run classification (no provider call)
+curl -s localhost:9080/v1/classify \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"why is my pod crashlooping"}'
 
-# 5. Open dashboard
-open http://localhost:9000
+# Partner demo: code route · retrieval · secret block · PII local_only
+make demo
+
+# Marketing site
+cd landing_8 && npm install && npm run dev   # http://localhost:3000
 ```
 
-## Architecture
+Optional: set `KUBEMIND_API_KEYS=key:workspace` before exposing the stack. Open mode trusts `X-Workspace-ID` for local laptop use only.
 
-| Service | Host Port | Internal Port | Role | Language |
-|---------|-----------|---------------|------|----------|
-| **router** | 9080 | 8080 | LLM gateway, routing, caching, cost tracking, circuit breaker | Python 3.12 |
-| **mind** | 9081 | 8081 | Knowledge graph, embeddings, hybrid search, link detection | Python 3.12 |
-| **agents** | 9082 | 8082 | Agent execution, planning, tools, memory | Python 3.12 |
-| **sentinel** | 9083 | 8083 | Observability, tracing, WebSocket streaming, metrics | Python 3.12 |
-| **Dashboard** | 9000 | 3000 | Next.js web UI with real-time data | TypeScript |
-| **CLI** | — | — | Go binary **`kmind`** for stack control | Go 1.22 |
+## Architecture (services)
+
+| Service | Host Port | Role |
+|---------|-----------|------|
+| **router** | 9080 | Intent classification, policy overlay, cache, providers, cascade |
+| **mind** | 9081 | Knowledge ingest + hybrid query (used by retrieval intents) |
+| **agents** | 9082 | Agent missions (LLM calls still go through router) |
+| **sentinel** | 9083 | Spans, metrics stream, audit ledger verify |
+| **Dashboard** | 9000 | Operator UI |
+| **CLI** | — | `kmind` |
+
+Full picture: **[docs/architecture.md](docs/architecture.md)**.
 
 ## Golden Rules
 
 1. **Every LLM call** flows through **router**
 2. **Every memory read/write** flows through **mind**
 3. **Every execution** is traced by **sentinel**
-4. **Local-first** — works offline with Ollama
-5. **Multi-tenant** — workspace derived from an API key, never a client header
-6. **Classified before dispatched** — every prompt is scored for purpose
-   (intent) and for sensitivity (PII, secrets, injection) before it is sent
-   anywhere. A governance decision never depends on the intent classifier.
+4. **Explicit credential ownership** — KeyMint in production; direct mode only when deliberately selected
+5. **Multi-tenant** — workspace from API key, never a forged header
+6. **Classified before dispatched** — purpose + sensitivity before any provider
 
 ## Intent-aware routing
 
-The router picks a **route profile** from the classified intent — model,
-provider pool, parameters, system prompt, cache policy and whether to retrieve
-from `mind` — then narrows the eligible pool with a sensitivity verdict.
+```bash
+make eval               # held-out labelled set, consequence-weighted errors
+make eval-sweep         # pick margin / abstention operating point
+make eval-calibrate     # fit confidence temperature
+make eval-train-linear  # ship logistic head only if it beats k-NN
+make demo               # scripted partner proof
+```
+
+Configure intents and profiles in `services/router/config/gateway.yaml`. Add an intent with examples + a profile — no code.
+
+## Deploy
 
 ```bash
-# See the decision without paying for a completion
-curl -s localhost:9080/v1/classify -d '{"prompt":"why is my pod crashlooping"}'
+# Local
+make up
 
-make eval          # score the classifier against a held-out labelled set
-make eval-sweep    # accuracy versus abstention across thresholds
+# Kubernetes
+helm upgrade --install kubemind ./charts/kubemind \
+  --namespace kubemind --create-namespace \
+  --set auth.apiKeys='partner-key:acme' \
+  --set auth.required=true
 ```
 
-A prompt containing personal data is forced onto a local provider, and refused
-outright if none is healthy rather than falling back to a cloud provider. A
-prompt containing a private key is blocked before dispatch.
-
-Full design: **[docs/design/intent-routing.md](docs/design/intent-routing.md)**.
-
-## Inter-Service Communication
-
-```
-router → sentinel (LLM call spans)
-mind → sentinel (ingest/query spans)
-agents → router (all LLM calls)
-agents → mind (memory read/write)
-agents → sentinel (plan/tool spans)
-Dashboard → all services (REST + WebSocket on sentinel)
-CLI → all services (HTTP)
-```
+Semantic cache: Redis by default in compose; set `KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector` (Helm default) for nearest-neighbour in Postgres.
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
-| [docs/KUBEMIND_IMPLEMENTATION_PLAN.md](docs/KUBEMIND_IMPLEMENTATION_PLAN.md) | Phased build plan (landing → code gaps) |
-| [docs/adr/0001-kubemind-naming.md](docs/adr/0001-kubemind-naming.md) | Product naming decision |
+| [docs/architecture.md](docs/architecture.md) | System architecture & pipeline |
+| [docs/design/intent-routing.md](docs/design/intent-routing.md) | Intent classifier + governance |
 | [docs/api.md](docs/api.md) | Public API inventory |
-| [docs/migration/legacy-k8s.md](docs/migration/legacy-k8s.md) | Old K8s names → KubeMind |
-| [shared/schemas/](shared/schemas/) | JSON Schema contracts for SDKs |
+| [docs/KUBEMIND_IMPLEMENTATION_PLAN.md](docs/KUBEMIND_IMPLEMENTATION_PLAN.md) | Phased build plan |
+| [docs/adr/0001-kubemind-naming.md](docs/adr/0001-kubemind-naming.md) | Naming ADR |
+| [charts/kubemind/README.md](charts/kubemind/README.md) | Helm chart |
+| [landing_8/](landing_8/) | Marketing landing page |
 
-## Development
-
-```bash
-make build              # Build all services + CLI
-make test               # Run all test suites
-make test-integration   # Integration tests (requires stack)
-make lint               # ruff, mypy, go vet, next lint
-make down               # Stop all services
-make status             # Health of all services
-```
-
-## API Reference (summary)
+## API (summary)
 
 Full inventory: **[docs/api.md](docs/api.md)**.
 
 ### router
-- `POST /v1/chat/completions` — OpenAI-compatible chat + semantic/exact cache
-- `POST /v1/route` — Prompt-style route API (SDK/landing; returns `cache_hit`, `latency_ms`, `intent`)
-- `POST /v1/classify` — Dry-run intent + policy for a prompt, without dispatching
-- `GET /v1/intents` — Configured intents and the profile each resolves to
-- `GET /v1/routing/report` — Per-intent cost, latency, cache hit rate, egress class
-- `POST /v1/embeddings` — Embedding requests
-- `GET /v1/providers/health` — Provider status + circuit state
-- `GET /v1/usage` — Per-workspace cost/token analytics
-- `GET /metrics` — Prometheus scrape
-- `POST /v1/cache/clear` — Clear Redis cache (admin key required)
+- `POST /v1/chat/completions` · `POST /v1/route` · `POST /v1/classify`
+- `GET /v1/intents` · `GET /v1/routing/report` · `GET /metrics`
+- Feedback review: `GET/POST /v1/intents/review*`
 
 ### mind
-- `POST /v1/ingest` — Ingest URL, file, or content (chunked)
-- `POST /v1/query` — Hybrid search (vector + keyword + graph)
-- `POST /v1/memory/query` — Alias of `/v1/query` (SDK/landing)
-- `GET /v1/nodes/{id}` — Get node with links
-- `GET /v1/graph` — Export subgraph
+- `POST /v1/ingest` · `POST /v1/query` · `GET /v1/graph`
 
 ### agents
-- `POST /v1/missions` — Create and run a mission
-- `GET /v1/missions/{id}` — Mission status
-- `GET /v1/missions` — List missions
-- `POST /v1/tools/invoke` — Invoke a tool
+- `POST /v1/missions` · `GET /v1/missions/{id}`
 
 ### sentinel
-- `POST /v1/spans` — Ingest a trace span
-- `GET /v1/spans` — Query spans
-- `GET /v1/metrics` — Aggregated metrics
-- `GET /v1/export` — Export traces
-- `WS /v1/stream` — Real-time stream
+- `POST /v1/spans` · `GET /v1/audit/verify` · `GET /v1/audit/entries` · `WS /v1/stream`
+
+## Development
+
+```bash
+make build test lint
+make down
+```
 
 ## License
 

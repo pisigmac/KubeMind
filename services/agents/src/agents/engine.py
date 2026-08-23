@@ -6,8 +6,8 @@ import time
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON, Integer, select, func
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy import Column, String, DateTime, Text, JSON, Integer, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()

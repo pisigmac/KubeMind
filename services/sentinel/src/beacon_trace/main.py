@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 from beacon_trace.models import SpanIngest
 from beacon_trace.storage import TraceStore
 from beacon_trace.streaming import ConnectionManager

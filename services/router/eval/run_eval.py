@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -216,6 +217,17 @@ async def main():
     parser.add_argument("--rules-only", action="store_true", help="Skip embeddings")
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
     parser.add_argument("--fail-on-policy-miss", action="store_true")
+    parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="Fit the softmax temperature on a held-out split and report it",
+    )
+    parser.add_argument(
+        "--calibration-split",
+        type=float,
+        default=0.3,
+        help="Fraction of the labelled set held out for temperature fitting",
+    )
     args = parser.parse_args()
 
     config = yaml.safe_load(Path(args.config).read_text())
@@ -246,6 +258,37 @@ async def main():
         await semantic.close()
 
     labels = sorted({row.get("intent", "general") for row in dataset})
+
+    if args.calibrate:
+        if args.rules_only:
+            print(
+                "\n[eval] rules-only mode: temperature scales k-NN scores, "
+                "which are not being computed. Start an embedder to calibrate.",
+                file=sys.stderr,
+            )
+        else:
+            # Deterministic split so the reported temperature is reproducible.
+            # Fitting on the same rows the index was built from would report a
+            # temperature that is confidently wrong on anything new.
+            pool = sorted(
+                (r for r in dataset if embeddings.get(r["prompt"])),
+                key=lambda r: hashlib.sha256(r["prompt"].encode()).hexdigest(),
+            )
+            n_hold = max(1, int(len(pool) * args.calibration_split))
+            holdout = pool[:n_hold]
+            samples = [
+                (embeddings[r["prompt"]], r.get("intent", "general")) for r in holdout
+            ]
+            before = classifier.config.temperature
+            after = classifier.calibrate(samples)
+            print(
+                f"\n[eval] temperature calibrated on {len(samples)} held-out "
+                f"prompts: {before} -> {after}"
+            )
+            print(
+                "       Softmax is monotonic, so this changes the confidence "
+                "number and not the predicted label."
+            )
 
     def run(margin: float, min_sim: float) -> List[Dict[str, Any]]:
         classifier.config.margin_threshold = margin

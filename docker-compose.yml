@@ -59,11 +59,17 @@ services:
       # and not fine on a shared network.
       - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
       - KUBEMIND_ADMIN_KEY=${KUBEMIND_ADMIN_KEY:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
       - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
+      - KUBEMIND_DEPLOYMENT=${KUBEMIND_DEPLOYMENT:-local}
+      - KUBEMIND_CREDENTIAL_MODE=${KUBEMIND_CREDENTIAL_MODE:-direct}
+      # redis (default) or pgvector. Postgres image already includes pgvector.
+      - KUBEMIND_SEMANTIC_CACHE_BACKEND=${KUBEMIND_SEMANTIC_CACHE_BACKEND:-redis}
       # Optional local inference targets (OpenAI-compatible):
       # - VLLM_BASE_URL=http://vllm:8000/v1
       # - DEEPSEEK_LOCAL_BASE_URL=http://ollama:11434
-      # - ANTHROPIC_API_KEY=...
+      # Direct mode uses deployment-secret provider keys. Production defaults
+      # to keymint mode and never injects provider credentials into KubeMind.
       # - ANTHROPIC_BASE_URL=https://api.anthropic.com/v1  # or LiteLLM proxy
     env_file:
       - .env
@@ -78,12 +84,17 @@ services:
         condition: service_started
 
   mind:
-    build: ./services/mind
+    build:
+      context: .
+      dockerfile: services/mind/Dockerfile
     ports:
       - "9081:8081"
     environment:
       - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
       - OLLAMA_BASE_URL=http://ollama:11434
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
     env_file:
       - .env
     depends_on:
@@ -93,7 +104,9 @@ services:
         condition: service_healthy
 
   agents:
-    build: ./services/agents
+    build:
+      context: .
+      dockerfile: services/agents/Dockerfile
     ports:
       - "9082:8082"
     environment:
@@ -101,6 +114,9 @@ services:
       - ROUTER_URL=http://router:8080
       - MIND_URL=http://mind:8081
       - SENTINEL_URL=http://sentinel:8083
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
     env_file:
       - .env
     depends_on:
@@ -116,6 +132,11 @@ services:
       - "9083:8083"
     environment:
       - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      # Hash-chained audit ledger (falls back to SQLite if unset).
+      - AUDIT_LEDGER_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
     volumes:
       - sentinel_data:/app/data
     env_file:

@@ -7,16 +7,15 @@ no network or model is required.
 
 import json
 import pytest
-from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
 from router import main as m
 from router import metrics as router_metrics
 from router.auth import Authenticator
-from router.cache import CacheManager, SemanticCache
+from router.cache import SemanticCache
 from router.intent import ClassifierConfig, IntentClassifier
-from router.policy import PolicyEngine, Rule, Action
+from router.policy import PolicyEngine
 from router.profiles import ProfileRegistry
 from router.providers.registry import ProviderRegistry
 from tests.test_routing import FakeProvider
@@ -147,6 +146,10 @@ def wire(monkeypatch):
     monkeypatch.setattr(m, "policy_engine", PolicyEngine.from_config(CONFIG))
     monkeypatch.setattr(m, "profiles", ProfileRegistry.from_config(CONFIG))
     monkeypatch.setattr(m, "authenticator", Authenticator())
+    monkeypatch.setattr(m, "feedback_log", None)
+    from router.cascade import CascadeConfig
+
+    monkeypatch.setattr(m, "cascade_config", CascadeConfig(enabled=False))
     return m
 
 
@@ -181,6 +184,24 @@ class TestIntentRouting:
         assert body["intent"] == "general"
         assert body["profile"] == "general"
         assert body["provider"] == "ollama"
+        assert body["routing_decision"]["reason_code"] == (
+            "CLASSIFIER_LOW_CONFIDENCE_FALLBACK"
+        )
+
+    def test_classifier_failure_falls_back_with_stable_reason(self, client, monkeypatch):
+        monkeypatch.setattr(
+            m.classifier,
+            "classify",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("private")),
+        )
+
+        response = chat(client, "ordinary request")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["intent"] == "general"
+        assert body["routing_decision"]["reason_code"] == "CLASSIFIER_FAILURE_FALLBACK"
+        assert "private" not in response.text
 
     def test_response_carries_decision_metadata(self, client):
         body = chat(client, "write a function").json()
@@ -196,7 +217,7 @@ class TestIntentRouting:
 
 
 class TestCacheOrdering:
-    def test_exact_hit_does_not_embed(self, client):
+    def test_exact_hit_still_evaluates_current_policy_and_profile(self, client):
         m.semantic_cache.vectors = {"repeat me": [1.0, 0.0, 0.0]}
         first = chat(client, "repeat me").json()
         assert first["cache_hit"] is False
@@ -205,8 +226,9 @@ class TestCacheOrdering:
         second = chat(client, "repeat me").json()
         assert second["cache_hit"] is True
         assert second["cache_type"] == "exact"
-        # The whole point of keeping the exact cache in front of the embedder.
-        assert m.semantic_cache.embed_calls == embeds_after_first
+        # Policy/profile resolution precedes cache reads to prevent stale or
+        # cross-policy responses. Classification may therefore embed again.
+        assert m.semantic_cache.embed_calls > embeds_after_first
 
     def test_exact_hit_reports_stored_intent(self, client):
         m.semantic_cache.vectors = {"write a function": [1.0, 0.0, 0.0]}
@@ -242,6 +264,26 @@ class TestCacheOrdering:
             headers={"X-KubeMind-Cache": "bypass"},
         )
         assert r.json()["cache_hit"] is False
+
+    def test_exact_cache_key_is_workspace_and_policy_scoped(self):
+        req = m.ChatRequest(
+            model="llama3.1",
+            messages=[m.Message(role="user", content="same")],
+        )
+        profile = m.RouteProfile("general")
+        policy = {"action": "allow", "rules": []}
+        first = m._exact_cache_key("chat", "workspace-a", req, profile, policy)
+        assert first != m._exact_cache_key("chat", "workspace-b", req, profile, policy)
+        assert first != m._exact_cache_key(
+            "chat", "workspace-a", req, profile, {"action": "local_only", "rules": []}
+        )
+
+    def test_tools_are_not_cached(self, client):
+        kwargs = {"tools": [{"type": "function", "function": {"name": "lookup"}}]}
+        first = chat(client, "repeat me", **kwargs).json()
+        second = chat(client, "repeat me", **kwargs).json()
+        assert first["cache_hit"] is False
+        assert second["cache_hit"] is False
 
 
 class TestPolicyEnforcement:
@@ -292,7 +334,10 @@ class TestFallback:
     def test_all_providers_failing_returns_502(self, client):
         for p in m.registry.providers.values():
             p.should_fail = True
-        assert chat(client, "anything").status_code == 502
+        response = chat(client, "anything")
+        assert response.status_code == 502
+        assert response.json()["detail"] == "Provider unavailable"
+        assert "anything" not in response.text
 
 
 class TestStreaming:

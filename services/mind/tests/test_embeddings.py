@@ -29,7 +29,7 @@ class TestEmbeddingGenerator:
     @pytest.mark.asyncio
     async def test_embed_success(self):
         with respx.mock:
-            respx.post("http://localhost:11434/api/embeddings").mock(
+            respx.post("http://localhost:11434/api/embed").mock(
                 return_value=httpx.Response(200, json={"embedding": [0.1] * 768})
             )
             gen = EmbeddingGenerator()
@@ -44,7 +44,7 @@ class TestEmbeddingGenerator:
     @pytest.mark.asyncio
     async def test_embed_failure_returns_zero_vector(self):
         with respx.mock:
-            respx.post("http://localhost:11434/api/embeddings").mock(
+            respx.post("http://localhost:11434/api/embed").mock(
                 return_value=httpx.Response(500)
             )
             gen = EmbeddingGenerator()
@@ -59,7 +59,7 @@ class TestEmbeddingGenerator:
     @pytest.mark.asyncio
     async def test_embed_truncate_long_text(self):
         with respx.mock:
-            respx.post("http://localhost:11434/api/embeddings").mock(
+            respx.post("http://localhost:11434/api/embed").mock(
                 return_value=httpx.Response(200, json={"embedding": [0.1] * 768})
             )
             gen = EmbeddingGenerator()

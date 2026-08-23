@@ -4,12 +4,34 @@ from agents.engine import AgentEngine
 
 class TestAgentEngine:
     @pytest.fixture
-    async def engine(self, mock_tools, mock_planner, mock_memory):
+    def engine(self, mock_tools, mock_planner, mock_memory):
         engine = AgentEngine(tools=mock_tools, planner=mock_planner, memory=mock_memory)
         engine.session_maker = MagicMock()
         session = AsyncMock()
         engine.session_maker.return_value.__aenter__ = AsyncMock(return_value=session)
         engine.session_maker.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        # Mock async ORM session helpers used across engine methods.
+        mission_id = "test-mission-id"
+        mission_mock = MagicMock()
+        mission_mock.id = mission_id
+        mission_mock.workspace_id = "default"
+        mission_mock.prompt = "Test mission"
+        mission_mock.status = "completed"
+        mission_mock.output = "Result"
+        mission_mock.error = None
+        mission_mock.plan = {"todos": []}
+        mission_mock.tool_calls = []
+        mission_mock.tokens_used = 10
+        mission_mock.duration_ms = 100
+        mission_mock.created_at = None
+        mission_mock.completed_at = None
+        session.get.return_value = mission_mock
+
+        execute_result = MagicMock()
+        execute_result.scalars.return_value = [mission_mock]
+        session.execute.return_value = execute_result
+
         engine.client = MagicMock()
         engine.client.post = AsyncMock(return_value=MagicMock(
             raise_for_status=MagicMock(),
@@ -30,7 +52,7 @@ class TestAgentEngine:
         assert result["duration_ms"] >= 0
 
     @pytest.mark.asyncio
-    async def test_run_sync_with_tools(self, engine, mock_tools):
+    async def test_run_sync_with_tools(self, engine, mock_tools, mock_planner):
         mock_planner.plan = AsyncMock(return_value={
             "todos": [
                 {"step": 1, "task": "List files", "tool": "filesystem", "reasoning": "Need to see files"},

@@ -119,11 +119,21 @@ class TracerClient:
         spans = self._buffer[:]
         self._buffer = []
 
+        # Services emit spans for every tenant, so they authenticate as a
+        # service and name the real workspace per span.
+        service_key = os.environ.get("KUBEMIND_SERVICE_KEY")
+
         try:
             for span in spans:
+                headers = {}
+                if span.get("workspace_id"):
+                    headers["X-Workspace-ID"] = span["workspace_id"]
+                if service_key:
+                    headers["X-API-Key"] = service_key
                 await self.client.post(
                     f"{self.sentinel_url}/v1/spans",
                     json=span,
+                    headers=headers,
                     timeout=3,
                 )
         except Exception:

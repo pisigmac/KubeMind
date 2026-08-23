@@ -5,7 +5,8 @@ import hashlib
 import json
 from datetime import datetime
 from contextlib import asynccontextmanager
-from typing import Optional, Any, Dict, List, Tuple
+from typing import Optional, Any, Dict, List
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -32,10 +33,24 @@ from router.intent import (
     extract_user_text,
     select_classification_text,
 )
-from router.policy import Action, PolicyEngine, PolicyError, PolicyVerdict
+from router.policy import PolicyEngine, PolicyError, PolicyVerdict
 from router.profiles import ProfileRegistry, RouteProfile
-from router.auth import API_KEY_HEADER, WORKSPACE_HEADER, AuthError, Authenticator
+from router.auth import (
+    API_KEY_HEADER,
+    WORKSPACE_HEADER,
+    AuthError,
+    Authenticator,
+    cors_origins,
+    deployment_profile,
+)
 from router import metrics as router_metrics
+from router.feedback import FeedbackConfig, FeedbackLog
+from router.cascade import (
+    CascadeConfig,
+    extract_answer_text,
+    reorder_for_cascade,
+    should_escalate,
+)
 
 # ── Global state ─────────────────────────────────────────────────
 registry: Optional[ProviderRegistry] = None
@@ -49,6 +64,8 @@ classifier: Optional[IntentClassifier] = None
 policy_engine: Optional[PolicyEngine] = None
 profiles: Optional[ProfileRegistry] = None
 authenticator: Optional[Authenticator] = None
+feedback_log: Optional[FeedbackLog] = None
+cascade_config: CascadeConfig = CascadeConfig()
 cache_ttl: int = 300
 
 
@@ -56,7 +73,7 @@ cache_ttl: int = 300
 async def lifespan(app: FastAPI):
     global registry, cache, semantic_cache, rate_limiter, usage_tracker
     global sentinel_client, mind_client, classifier, policy_engine, profiles
-    global authenticator, cache_ttl
+    global authenticator, feedback_log, cascade_config, cache_ttl
 
     cache = CacheManager()
     await cache.connect()
@@ -79,7 +96,16 @@ async def lifespan(app: FastAPI):
     profiles = ProfileRegistry.from_config(registry.config)
     policy_engine = PolicyEngine.from_config(registry.config)
     authenticator = Authenticator.from_config(registry.config)
+    authenticator.assert_production_safe("router")
     print(authenticator.startup_banner())
+
+    feedback_log = FeedbackLog(
+        redis_client=cache.client,
+        config=FeedbackConfig.from_config(registry.config),
+    )
+    cascade_config = CascadeConfig.from_dict(
+        (registry.config.get("routing") or {}).get("cascade")
+    )
 
     mind_client = MindClient()
     await mind_client.init()
@@ -90,6 +116,11 @@ async def lifespan(app: FastAPI):
         f"[router] intent classifier: {len(classifier.intents)} intents, "
         f"{indexed} examples indexed, "
         f"{'semantic' if classifier.is_ready else 'rules-only'} mode"
+        + (", linear_head=on" if classifier.linear_head else "")
+    )
+    print(
+        f"[router] semantic cache backend={semantic_cache.backend}; "
+        f"cascade={'on' if cascade_config.enabled else 'off'}"
     )
 
     print("[router] Initialized")
@@ -113,18 +144,9 @@ app = FastAPI(
 )
 
 
-def _cors_origins() -> List[str]:
-    raw = os.environ.get("KUBEMIND_CORS_ORIGINS", "").strip()
-    if not raw:
-        return ["http://localhost:9000", "http://localhost:3000"]
-    if raw == "*":
-        return ["*"]
-    return [o.strip() for o in raw.split(",") if o.strip()]
-
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(),
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER],
@@ -175,16 +197,32 @@ def _cache_bypassed(request: Request, enable_cache: Optional[bool]) -> bool:
 
 
 def _exact_cache_key(
-    prefix: str, model: str, messages: list, temperature: float, tools: list = None
+    prefix: str,
+    workspace_id: str,
+    req: ChatRequest,
+    profile: RouteProfile,
+    policy_signature: Dict[str, Any],
 ) -> str:
     data = {
-        "model": model,
-        "messages": [(m.role, m.content) for m in messages],
-        "temp": temperature,
+        "schema": "2",
+        "workspace_id": workspace_id,
+        "model": req.model,
+        "messages": [(m.role, m.content, m.name) for m in req.messages],
+        "temperature": req.temperature,
+        "top_p": req.top_p,
+        "max_tokens": req.max_tokens,
+        "tools": req.tools,
+        "tool_choice": req.tool_choice,
+        "preferred_target": req.preferred_target,
+        "fallback": req.fallback,
+        "routing_policy": req.policy,
+        "max_latency_ms": req.max_latency_ms,
+        "profile": asdict(profile),
+        "policy": policy_signature,
     }
-    if tools:
-        data["tools"] = tools
-    digest = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(
+        json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return f"km:exact:{prefix}:{digest}"
 
 
@@ -311,52 +349,16 @@ async def _dispatch_chat(
                 status_code=429, detail=f"Rate limit exceeded. Retry after {retry_after}s"
             )
 
-    # ── 1) Exact cache, before any embedding ─────────────────────
-    # This path must stay cheap. Embedding first would put 10-40ms in front of
-    # the fastest response the router can give.
-    exact_key = _exact_cache_key(
-        "chat", req.model, req.messages, req.temperature or 0.7, req.tools
-    )
-    if not bypass_cache and cache:
-        cached = await cache.get(exact_key)
-        if cached:
-            latency_ms = (time.perf_counter() - t0) * 1000
-            # An exact hit never embeds, so it cannot classify. The intent
-            # stored alongside the entry is what makes this field truthful.
-            stored_intent = cached.get("intent", "general")
-            out = _enrich(
-                dict(cached),
-                provider=cached.get("provider", "cache"),
-                fallback=False,
-                cache_hit=True,
-                cache_type="exact",
-                latency_ms=latency_ms,
-                route_target="cache/exact",
-                intent=stored_intent,
-                intent_confidence=float(cached.get("intent_confidence") or 0.0),
-                profile=cached.get("profile"),
-                policy_action=cached.get("policy_action", "allow"),
-                egress_class=cached.get("egress_class", "any"),
-            )
-            record.intent = stored_intent
-            record.intent_method = "cached"
-            record.cache_hit = True
-            record.cache_type = "exact"
-            record.billable = False
-            record.route_target = "cache/exact"
-            record.latency_ms = latency_ms
-            await _emit_decision(record)
-            return out
-
-    # ── 2) Sensitivity, on the raw text ──────────────────────────
+    # Policy must execute before every cache read. Serving cached content is
+    # still an egress decision and cannot bypass changed Workspace policy.
     full_text = extract_user_text(req.messages)
     verdict = PolicyVerdict(text=full_text)
     if policy_engine:
         try:
             verdict = policy_engine.evaluate(full_text, workspace_id)
-        except PolicyError as e:
+        except PolicyError:
             record.status = "error"
-            record.error = f"policy_unavailable: {e}"
+            record.error = "policy_unavailable"
             record.latency_ms = (time.perf_counter() - t0) * 1000
             await _emit_decision(record)
             raise HTTPException(
@@ -405,11 +407,16 @@ async def _dispatch_chat(
     if want_embedding and semantic_cache:
         embedding = await semantic_cache.embed(classification_text or req.model)
 
-    intent_result = (
-        classifier.classify(classification_text, embedding)
-        if classifier
-        else IntentResult("general", 0.0, 0.0, "disabled")
-    )
+    try:
+        intent_result = (
+            classifier.classify(classification_text, embedding)
+            if classifier
+            else IntentResult("general", 0.0, 0.0, "disabled", abstained=True)
+        )
+    except Exception:
+        intent_result = IntentResult(
+            "general", 0.0, 0.0, "classifier_failure", abstained=True
+        )
     record.intent = intent_result.intent
     record.intent_confidence = intent_result.confidence
     record.intent_margin = intent_result.margin
@@ -418,6 +425,7 @@ async def _dispatch_chat(
 
     profile = profiles.for_intent(intent_result.intent) if profiles else RouteProfile("default")
     record.profile = profile.name
+    record.considered_pool = list(profile.pool)
 
     # Explicit client model beats the profile default.
     model_explicit = bool(req.model) and req.model != os.environ.get(
@@ -432,7 +440,44 @@ async def _dispatch_chat(
         not bypass_cache
         and verdict.cacheable
         and profile.cache.enabled
+        and not req.tools
+        and not profile.retrieval
     )
+    rules = policy_engine.rules_for(workspace_id) if policy_engine else []
+    policy_signature = {
+        "action": verdict.action.value,
+        "egress_class": verdict.egress_class,
+        "rules": [(rule.name, rule.threshold) for rule in rules],
+    }
+    exact_key = _exact_cache_key(
+        "chat", workspace_id, req, profile, policy_signature
+    )
+
+    if cacheable and cache:
+        cached = await cache.get(exact_key)
+        if cached:
+            latency_ms = (time.perf_counter() - t0) * 1000
+            out = _enrich(
+                dict(cached),
+                provider=cached.get("provider", "cache"),
+                fallback=False,
+                cache_hit=True,
+                cache_type="exact",
+                latency_ms=latency_ms,
+                route_target="cache/exact",
+                intent=intent_result.intent,
+                intent_confidence=intent_result.confidence,
+                profile=profile.name,
+                policy_action=verdict.action.value,
+                egress_class=verdict.egress_class,
+            )
+            record.cache_hit = True
+            record.cache_type = "exact"
+            record.billable = False
+            record.route_target = "cache/exact"
+            record.latency_ms = latency_ms
+            await _emit_decision(record)
+            return out
     sig = cache_signature(req.model, _system_prompt(req.messages), req.temperature or 0.7)
     partition = (
         intent_result.intent
@@ -498,8 +543,27 @@ async def _dispatch_chat(
         fallback_provider=req.fallback,
         pool=profile.pool or None,
         local_only=local_only,
+        policy=req.policy or "cost",
+        max_latency_ms=req.max_latency_ms,
+    )
+    chain = reorder_for_cascade(
+        chain, config=cascade_config, is_local=registry.is_local
     )
     record.eligible_pool = [p.name for p in chain]
+    if local_only:
+        record.route_reason_code = "POLICY_LOCAL_ONLY"
+    elif intent_result.method == "classifier_failure":
+        record.route_reason_code = "CLASSIFIER_FAILURE_FALLBACK"
+    elif intent_result.abstained:
+        record.route_reason_code = "CLASSIFIER_LOW_CONFIDENCE_FALLBACK"
+    elif req.preferred_target and chain and chain[0].name == (
+        registry.resolve_target_alias(req.preferred_target) or req.preferred_target
+    ):
+        record.route_reason_code = "PREFERRED_PROVIDER_ALLOWED"
+    elif req.preferred_target:
+        record.route_reason_code = "PREFERRED_PROVIDER_UNAVAILABLE"
+    else:
+        record.route_reason_code = "POLICY_ORDERED_SELECTION"
 
     if not chain:
         record.status = "error"
@@ -526,24 +590,56 @@ async def _dispatch_chat(
     response: Optional[Dict[str, Any]] = None
     provider = None
     used_fallback = False
-    last_error: Optional[Exception] = None
+    # Kept if cascade tries a stronger model and that attempt fails -- a thin
+    # cheap answer beats no answer.
+    primary_response: Optional[Dict[str, Any]] = None
+    primary_provider = None
 
     for attempt, candidate in enumerate(chain):
+        call_start = time.perf_counter()
         try:
-            response = await candidate.chat(req)
+            candidate_response = await candidate.chat(req)
+            # Feeds the `latency` policy and the max_latency_ms budget, which
+            # would otherwise have nothing measured to work from.
+            candidate.observe_latency((time.perf_counter() - call_start) * 1000)
+            response = candidate_response
             provider = candidate
             used_fallback = attempt > 0
+
+            # Optional cascade: keep the cheap answer only when it looks good.
+            if attempt == 0 and len(chain) > 1:
+                primary_response = candidate_response
+                primary_provider = candidate
+                decision = should_escalate(
+                    config=cascade_config,
+                    confidence=intent_result.confidence,
+                    abstained=intent_result.abstained,
+                    answer_text=extract_answer_text(candidate_response),
+                    local_only=local_only,
+                )
+                if decision.should_escalate:
+                    record.cascade_escalated = True
+                    record.cascade_reason = decision.reason
+                    continue
             break
-        except Exception as e:
-            last_error = e
+        except Exception:
+            if attempt > 0 and primary_response is not None:
+                # Escalation failed; serve the first answer.
+                response = primary_response
+                provider = primary_provider
+                used_fallback = False
+                break
 
     if response is None or provider is None:
         record.status = "error"
-        record.error = str(last_error)
+        record.error = "provider_unavailable"
         record.billable = False
         record.latency_ms = (time.perf_counter() - t0) * 1000
         await _emit_decision(record)
-        raise HTTPException(status_code=502, detail=f"Provider error: {last_error}")
+        raise HTTPException(status_code=502, detail="Provider unavailable")
+
+    if record.cascade_escalated and used_fallback:
+        used_fallback = True
 
     usage = response.get("usage", {})
     if usage_tracker:
@@ -568,6 +664,12 @@ async def _dispatch_chat(
         egress_class=verdict.egress_class,
         retrieval_used=retrieval_used,
     )
+    out["routing_decision"] = {
+        "reason_code": record.route_reason_code,
+        "considered_providers": record.considered_pool,
+        "eligible_providers": record.eligible_pool,
+        "selected_provider": provider.name,
+    }
 
     record.provider = provider.name
     record.route_target = route_target
@@ -591,7 +693,56 @@ async def _dispatch_chat(
         )
 
     await _emit_decision(record)
+    await _capture_feedback(
+        record,
+        classification_text,
+        intent_result,
+        provider.name,
+        used_fallback,
+    )
     return out
+
+
+async def _capture_feedback(
+    record: DecisionRecord,
+    prompt: str,
+    intent_result,
+    provider_name: Optional[str],
+    used_fallback: bool,
+):
+    """Queue the cases a labelled set is short of.
+
+    Abstentions, near-threshold predictions and provider fallbacks are the
+    examples worth a human's time. Collecting them costs nothing here and is
+    what keeps the classifier honest as traffic drifts.
+    """
+    if not feedback_log:
+        return
+    feedback_log.observe(record.intent)
+    reason = feedback_log.should_capture(
+        abstained=record.intent_abstained,
+        confidence=record.intent_confidence,
+        used_fallback=used_fallback,
+        policy_action=record.policy_action,
+    )
+    if not reason:
+        return
+    try:
+        await feedback_log.capture(
+            workspace_id=record.workspace_id,
+            reason=reason,
+            prompt=prompt or "",
+            predicted_intent=record.intent,
+            confidence=record.intent_confidence,
+            margin=getattr(intent_result, "margin", 0.0),
+            scores=getattr(intent_result, "scores", {}) or {},
+            profile=record.profile or "",
+            provider=provider_name,
+            sensitive=bool(record.policy_detectors),
+        )
+    except Exception:
+        # Label collection is never worth failing a served request over.
+        pass
 
 
 def _redact_messages(
@@ -629,6 +780,12 @@ async def health():
         "service": "router",
         "version": "0.3.0",
         "providers_loaded": len(registry.providers) if registry else 0,
+        "credential_mode": registry.credential_mode if registry else "uninitialized",
+        "credential_warning": (
+            "direct mode stores deployment provider credentials in KubeMind"
+            if registry and not registry.uses_keymint
+            else None
+        ),
         "cache_connected": cache.is_connected if cache else False,
         "semantic_cache": bool(semantic_cache and semantic_cache.enabled),
         "intent_classifier": (
@@ -636,6 +793,7 @@ async def health():
         ),
         "policy_enabled": bool(policy_engine and policy_engine.enabled),
         "auth": "enforced" if (authenticator and not authenticator.open_mode) else "open",
+        "deployment": deployment_profile(),
         "retrieval": bool(mind_client and mind_client.enabled),
     }
 
@@ -672,6 +830,8 @@ async def route_prompt(
         preferred_target=req.preferred_target,
         fallback=req.fallback,
         enable_cache=req.enable_cache,
+        policy=req.policy,
+        max_latency_ms=req.max_latency_ms,
     )
     result = await _dispatch_chat(
         chat_req, request, auth.workspace_id, authenticated=auth.authenticated
@@ -727,8 +887,8 @@ async def embeddings(
                 auth.workspace_id, provider.name, req.model, usage
             )
         return JSONResponse(content=response)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=502, detail="Provider unavailable")
 
 
 @app.get("/v1/providers/health")
@@ -765,6 +925,75 @@ async def list_intents(auth=Depends(get_auth)):
     }
 
 
+@app.get("/v1/intents/review")
+async def list_review_queue(
+    limit: int = 50,
+    reason: Optional[str] = None,
+    include_reviewed: bool = False,
+    auth=Depends(get_auth),
+):
+    """Cases worth a human's attention.
+
+    Abstentions, near-threshold predictions and provider fallbacks. Reviewing
+    a random sample of traffic mostly re-confirms what the classifier already
+    gets right; these are the examples that carry information.
+    """
+    if not feedback_log:
+        raise HTTPException(status_code=503, detail="Feedback log not initialized")
+    return {
+        "workspace_id": auth.workspace_id,
+        "cases": await feedback_log.pending(
+            auth.workspace_id,
+            limit=limit,
+            reason=reason,
+            include_reviewed=include_reviewed,
+        ),
+    }
+
+
+@app.post("/v1/intents/review")
+async def submit_review(payload: Dict[str, Any], auth=Depends(get_auth)):
+    """Attach a human label to a queued case."""
+    if not feedback_log:
+        raise HTTPException(status_code=503, detail="Feedback log not initialized")
+    case_id = payload.get("case_id")
+    true_intent = payload.get("intent")
+    if not case_id or not true_intent:
+        raise HTTPException(status_code=400, detail="case_id and intent are required")
+
+    updated = await feedback_log.review(auth.workspace_id, case_id, true_intent)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return updated
+
+
+@app.get("/v1/intents/review/summary")
+async def review_summary(auth=Depends(get_auth)):
+    """Drift signal.
+
+    A rising disagreement rate means the intent definitions no longer describe
+    what people are actually asking for, which is a product signal before it
+    is a modelling one.
+    """
+    if not feedback_log:
+        raise HTTPException(status_code=503, detail="Feedback log not initialized")
+    return await feedback_log.summary(auth.workspace_id)
+
+
+@app.get("/v1/intents/review/export")
+async def export_reviewed(auth=Depends(get_auth)):
+    """Human-confirmed labels in eval/dataset.jsonl format.
+
+    Append to the eval set and re-run `make eval`. Only reviewed cases are
+    exported: exporting predictions would let the classifier grade its own
+    homework.
+    """
+    if not feedback_log:
+        raise HTTPException(status_code=503, detail="Feedback log not initialized")
+    body = await feedback_log.export_jsonl(auth.workspace_id)
+    return PlainTextResponse(content=body, media_type="application/x-ndjson")
+
+
 @app.post("/v1/classify")
 async def classify_prompt(payload: Dict[str, Any], auth=Depends(get_auth)):
     """Dry-run the classifier and policy without dispatching anywhere.
@@ -791,8 +1020,8 @@ async def classify_prompt(payload: Dict[str, Any], auth=Depends(get_auth)):
     if policy_engine:
         try:
             verdict = policy_engine.evaluate(text, auth.workspace_id)
-        except PolicyError as e:
-            raise HTTPException(status_code=503, detail=str(e))
+        except PolicyError:
+            raise HTTPException(status_code=503, detail="Policy engine unavailable")
 
     return {
         **result.as_attributes(),

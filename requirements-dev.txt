@@ -1,0 +1,6 @@
+pytest==9.1.1
+ruff==0.3.7
+mypy==1.20.2
+bandit==1.9.4
+pip-audit==2.10.1
+types-PyYAML==6.0.12.20241230

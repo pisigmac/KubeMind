@@ -5,14 +5,13 @@ from sentinel.storage import TraceStore
 
 class TestTraceStore:
     @pytest.fixture
-    def store(self):
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            db_path = f.name
-        store = TraceStore()
-        store.db_path = db_path
-        store._init_db()
+    def store(self, tmp_path):
+        # The path has to reach the constructor: setting `db_path` afterwards
+        # left a cached connection pointing at the shared default database,
+        # so tests collided on span_id and locked each other out.
+        store = TraceStore(str(tmp_path / "spans.db"))
         yield store
-        os.unlink(db_path)
+        store.close()
 
     def test_save_and_query(self, store):
         span = {

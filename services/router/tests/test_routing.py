@@ -1,9 +1,11 @@
 """Provider selection, egress constraints and fallback chains."""
 
 import pytest
+import yaml
 
 from router.providers.base import BaseProvider, CircuitState
 from router.providers.registry import ProviderRegistry
+from router.providers.keymint_managed import KeyMintManagedProvider
 from router.profiles import ProfileRegistry, RouteProfile
 
 
@@ -94,6 +96,102 @@ class TestModelSupport:
 
     def test_alias_resolution(self, registry):
         assert registry.provider_by_name("local", model="llama3.1").name == "ollama"
+
+
+class TestKeyMintManagedProviders:
+    @pytest.mark.asyncio
+    async def test_remote_metadata_is_not_directly_executable(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "gateway.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "credential_mode": "keymint",
+                    "providers": {
+                        "openai": {
+                            "models": ["gpt-4o-mini"],
+                        }
+                    }
+                }
+            )
+        )
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(config_path))
+        registry = ProviderRegistry()
+
+        await registry.load_providers()
+
+        provider = registry.providers["openai"]
+        assert isinstance(provider, KeyMintManagedProvider)
+        assert "api_key" not in provider.config
+        assert registry.eligible_providers("gpt-4o-mini") == []
+        assert registry.eligible_providers(
+            "gpt-4o-mini", keymint_managed=True
+        ) == [provider]
+        with pytest.raises(RuntimeError, match="KEYMINT_CAPABILITY_REQUIRED"):
+            await provider.chat(None)
+
+    @pytest.mark.asyncio
+    async def test_keymint_mode_rejects_ambient_api_key(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "gateway.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "credential_mode": "keymint",
+                    "providers": {
+                        "openai": {
+                            "api_key": "${OPENAI_API_KEY}",
+                            "models": ["gpt-4o-mini"],
+                        }
+                    }
+                }
+            )
+        )
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(config_path))
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-secret")
+
+        with pytest.raises(ValueError, match="ambient api_key configuration is forbidden"):
+            await ProviderRegistry().load_providers()
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_loads_explicit_provider_key(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "gateway.yaml"
+        config_path.write_text(
+            yaml.safe_dump(
+                {
+                    "credential_mode": "direct",
+                    "providers": {
+                        "openai": {
+                            "api_key": "${OPENAI_API_KEY}",
+                            "base_url": "https://api.openai.com/v1",
+                            "models": ["gpt-4o-mini"],
+                        }
+                    },
+                }
+            )
+        )
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(config_path))
+        monkeypatch.setenv("OPENAI_API_KEY", "synthetic-secret")
+
+        registry = ProviderRegistry()
+        await registry.load_providers()
+
+        assert registry.credential_mode == "direct"
+        assert registry.select_provider("gpt-4o-mini") is not None
+        await registry.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [None, "automatic", ""])
+    async def test_missing_or_invalid_mode_fails_startup(
+        self, tmp_path, monkeypatch, mode
+    ):
+        config_path = tmp_path / "gateway.yaml"
+        config = {"providers": {}}
+        if mode is not None:
+            config["credential_mode"] = mode
+        config_path.write_text(yaml.safe_dump(config))
+        monkeypatch.setenv("KUBEMIND_ROUTER_CONFIG", str(config_path))
+
+        with pytest.raises(ValueError, match="credential_mode must be explicitly"):
+            await ProviderRegistry().load_providers()
 
 
 class TestCostOrdering:

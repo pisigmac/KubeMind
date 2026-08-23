@@ -1,0 +1,17 @@
+{
+  "commandId": "cmd_test001",
+  "schemaVersion": 1,
+  "workspaceId": "ws_test001",
+  "projectId": "project_test001",
+  "kubeVersionId": "kv_test001",
+  "runId": "run_test001",
+  "blockRunId": "brun_test001",
+  "runtime": "model.smart",
+  "operation": "generate",
+  "inputArtifactRefs": ["artifact_input001"],
+  "connectionRefs": ["conn_provider001"],
+  "policyRef": "policy_test001",
+  "deadline": "2030-01-01T12:00:00Z",
+  "idempotencyKey": "test-run-001:block-001:attempt-001",
+  "correlationId": "corr_test001"
+}

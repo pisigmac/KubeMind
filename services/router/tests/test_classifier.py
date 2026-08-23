@@ -135,6 +135,56 @@ class TestConfidence:
         )
 
 
+class TestCalibration:
+    """Temperature scaling is what makes the confidence number mean something.
+
+    Without it, softmax over cosine similarities that all sit in a narrow band
+    is near-uniform, and any threshold placed on it is arbitrary.
+    """
+
+    @pytest.fixture
+    def samples(self):
+        return [
+            (_vec(0.98, 0.05, 0, 0), "code"),
+            (_vec(0.95, 0.10, 0, 0), "code"),
+            (_vec(0.05, 0.98, 0, 0), "rag"),
+            (_vec(0, 0.05, 0.98, 0), "log"),
+        ]
+
+    def test_picks_a_temperature(self, classifier, samples):
+        t = classifier.calibrate(samples)
+        assert t == classifier.config.temperature
+        assert t > 0
+
+    def test_never_changes_the_predicted_label(self, classifier, samples):
+        # Softmax is monotonic: calibration moves confidence, not ranking.
+        probe = _vec(1, 0.3, 0, 0)
+        before = classifier.classify("anything", probe).intent
+        classifier.calibrate(samples)
+        assert classifier.classify("anything", probe).intent == before
+
+    def test_empty_samples_leave_temperature_untouched(self, classifier):
+        original = classifier.config.temperature
+        assert classifier.calibrate([]) == original
+
+    def test_unlabelled_samples_are_skipped(self, classifier):
+        original = classifier.config.temperature
+        assert classifier.calibrate([(_vec(1, 0, 0, 0), "nonexistent")]) == original
+
+    def test_confidence_survives_a_tiny_temperature(self, classifier):
+        # A naive exp(score/t) overflows here; the max is subtracted first.
+        classifier.config.temperature = 1e-6
+        conf = classifier.classify("anything", _vec(1, 0, 0, 0)).confidence
+        assert 0.0 <= conf <= 1.0
+
+    def test_lower_temperature_sharpens_confidence(self, classifier):
+        probe = _vec(1, 0.5, 0, 0)
+        classifier.config.temperature = 0.5
+        soft = classifier.classify("anything", probe).confidence
+        classifier.config.temperature = 0.02
+        assert classifier.classify("anything", probe).confidence > soft
+
+
 class TestDegradation:
     def test_missing_embedding_falls_back_to_rules(self, classifier):
         result = classifier.classify("Refactor this Python function", None)

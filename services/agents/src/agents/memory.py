@@ -1,6 +1,6 @@
 import os
 import httpx
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
 class MemoryManager:
     def __init__(self):

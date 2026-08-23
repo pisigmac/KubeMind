@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 from mind.storage import KnowledgeStore
 from mind.embeddings import EmbeddingGenerator
@@ -70,7 +70,7 @@ class HybridSearcher:
         if vector:
             max_v = max(r["score"] for r in vector)
             min_v = min(r["score"] for r in vector)
-            v_range = max_v - min_v if max_v > min_v else 1
+            v_range = max_v - min_v
             for r in vector:
                 nid = r["id"]
                 norm_score = (r["score"] - min_v) / v_range if v_range > 0 else 1
@@ -88,7 +88,7 @@ class HybridSearcher:
         if keyword:
             max_k = max(r["score"] for r in keyword)
             min_k = min(r["score"] for r in keyword)
-            k_range = max_k - min_k if max_k > min_k else 1
+            k_range = max_k - min_k
             for r in keyword:
                 nid = r["id"]
                 norm_score = (r["score"] - min_k) / k_range if k_range > 0 else 1

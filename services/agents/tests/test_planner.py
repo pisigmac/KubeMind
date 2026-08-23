@@ -7,7 +7,7 @@ class TestPlanner:
     @pytest.mark.asyncio
     async def test_plan_success(self):
         with respx.mock:
-            respx.post("http://localhost:8080/v1/chat/completions").mock(
+            respx.post("http://localhost:9080/v1/chat/completions").mock(
                 return_value=httpx.Response(200, json={
                     "choices": [{
                         "message": {
@@ -29,7 +29,7 @@ class TestPlanner:
     @pytest.mark.asyncio
     async def test_plan_fallback_on_error(self):
         with respx.mock:
-            respx.post("http://localhost:8080/v1/chat/completions").mock(
+            respx.post("http://localhost:9080/v1/chat/completions").mock(
                 return_value=httpx.Response(500)
             )
             planner = Planner()

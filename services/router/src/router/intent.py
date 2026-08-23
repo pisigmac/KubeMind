@@ -21,7 +21,10 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
+
+if TYPE_CHECKING:
+    from router.linear_head import LinearHead
 
 GENERAL = "general"
 
@@ -231,6 +234,8 @@ class IntentClassifier:
         # intent -> list of example vectors
         self.index: Dict[str, List[List[float]]] = {}
         self.is_ready = False
+        # Optional logistic head trained offline. None means k-NN is in charge.
+        self.linear_head: Optional[LinearHead] = None
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "IntentClassifier":
@@ -246,7 +251,18 @@ class IntentClassifier:
                 ex = list(spec or [])
             if ex:
                 examples[name] = [str(e) for e in ex]
-        return cls(config=cfg, examples=examples)
+        classifier = cls(config=cfg, examples=examples)
+
+        # Load a trained head only when the trainer wrote one that beat k-NN.
+        head_path = (routing.get("classifier") or {}).get("linear_head_path")
+        if head_path:
+            try:
+                from router.linear_head import LinearHead
+
+                classifier.linear_head = LinearHead.load(str(head_path))
+            except Exception as e:
+                print(f"[router] linear head not loaded ({e}); using k-NN")
+        return classifier
 
     @property
     def intents(self) -> List[str]:
@@ -293,15 +309,68 @@ class IntentClassifier:
         return scores
 
     def _confidence(self, scores: Dict[str, float], top: str) -> float:
-        """Softmax over intent scores at the configured temperature."""
+        """Softmax over intent scores at the calibrated temperature.
+
+        Temperature scaling is what makes the number mean something. Raw
+        softmax over cosine similarities that all sit in a narrow band is
+        near-uniform, so an uncalibrated 0.4 and 0.9 would not correspond to
+        any real difference in how often the classifier is right.
+        """
         if not scores:
             return 0.0
         t = max(1e-6, self.config.temperature)
-        exps = {k: math.exp(v / t) for k, v in scores.items()}
+        # Subtract the max before exponentiating: scores/t can be large enough
+        # to overflow at small temperatures.
+        top_score = max(scores.values())
+        exps = {k: math.exp((v - top_score) / t) for k, v in scores.items()}
         total = sum(exps.values())
         if total <= 0:
             return 0.0
         return exps.get(top, 0.0) / total
+
+    def calibrate(
+        self,
+        samples: List[Tuple[Sequence[float], str]],
+        *,
+        grid: Optional[Sequence[float]] = None,
+    ) -> float:
+        """Fit the softmax temperature on held-out (embedding, true intent) pairs.
+
+        Minimises negative log likelihood over a grid, which is the standard
+        cheap version of temperature scaling. Returns the chosen temperature
+        and applies it.
+
+        Calibration only changes the *confidence number*, never the predicted
+        label -- softmax is monotonic, so the ranking and therefore the margin
+        threshold are untouched. It exists so that a confidence gate elsewhere
+        can be reasoned about.
+        """
+        if not samples:
+            return self.config.temperature
+
+        grid = grid or (0.01, 0.02, 0.03, 0.05, 0.08, 0.12, 0.2, 0.35, 0.5)
+        scored = []
+        for embedding, truth in samples:
+            s = self._knn_scores(embedding)
+            if s and truth in s:
+                scored.append((s, truth))
+        if not scored:
+            return self.config.temperature
+
+        best_t, best_nll = self.config.temperature, float("inf")
+        for t in grid:
+            nll = 0.0
+            for s, truth in scored:
+                top_score = max(s.values())
+                exps = {k: math.exp((v - top_score) / max(1e-6, t)) for k, v in s.items()}
+                total = sum(exps.values()) or 1.0
+                p = max(1e-12, exps.get(truth, 0.0) / total)
+                nll -= math.log(p)
+            if nll < best_nll:
+                best_nll, best_t = nll, t
+
+        self.config.temperature = best_t
+        return best_t
 
     def classify(
         self,
@@ -335,14 +404,24 @@ class IntentClassifier:
                 )
             return IntentResult(top, top_score, margin, "rules", scores=rules)
 
-        scores = self._knn_scores(embedding)
+        # The linear head replaces the k-NN scorer only when one has been
+        # trained and shown to beat it. Everything downstream -- margin,
+        # abstention, the rule prior -- is unchanged, so the operating point
+        # carries over.
+        method = "knn"
+        scores: Dict[str, float] = {}
+        if self.linear_head is not None:
+            scores = self.linear_head.scores(embedding)
+            if scores:
+                method = "linear"
+        if not scores:
+            scores = self._knn_scores(embedding)
         if not scores:
             return IntentResult(GENERAL, 0.0, 0.0, "abstain", abstained=True)
 
         # Rules act as a prior: a small additive bonus where they agree.
-        method = "knn"
         if rules:
-            method = "hybrid"
+            method = f"{method}+rules"
             for intent, rscore in rules.items():
                 if intent in scores:
                     scores[intent] += self.config.rule_prior_weight * rscore

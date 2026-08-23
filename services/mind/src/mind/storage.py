@@ -1,6 +1,5 @@
 import os
 import uuid
-import json
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
@@ -13,7 +12,6 @@ from sqlalchemy import (
     ForeignKey,
     select,
     text as sql_text,
-    Integer,
 )
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
@@ -276,8 +274,8 @@ class KnowledgeStore:
                 for n in nodes_result.scalars()
             ]
             links = [
-                {"source": l.source_id, "target": l.target_id, "type": l.link_type}
-                for l in links_result.scalars()
+                {"source": link.source_id, "target": link.target_id, "type": link.link_type}
+                for link in links_result.scalars()
             ]
 
             return {

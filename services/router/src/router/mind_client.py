@@ -68,11 +68,17 @@ class MindClient:
     ) -> List[Dict[str, Any]]:
         if not self.enabled or not self.client or not query.strip():
             return []
+        headers = {"X-Workspace-ID": workspace_id}
+        # The router retrieves for every tenant, so it authenticates as a
+        # service and names the real caller in the header.
+        service_key = os.environ.get("KUBEMIND_SERVICE_KEY")
+        if service_key:
+            headers["X-API-Key"] = service_key
         try:
             resp = await self.client.post(
                 f"{self.base_url}/v1/query",
                 json={"query": query, "top_k": top_k},
-                headers={"X-Workspace-ID": workspace_id},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()

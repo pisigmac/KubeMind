@@ -1,5 +1,4 @@
 import httpx
-import time
 from typing import Any, Dict
 
 from router.providers.base import BaseProvider
@@ -49,7 +48,7 @@ class OpenAICompatibleProvider(BaseProvider):
             data = resp.json()
             self.record_success()
             return data
-        except Exception as e:
+        except Exception:
             self.record_failure()
             raise
 
@@ -72,7 +71,7 @@ class OpenAICompatibleProvider(BaseProvider):
             data = resp.json()
             self.record_success()
             return data
-        except Exception as e:
+        except Exception:
             self.record_failure()
             raise
 
