@@ -2,7 +2,7 @@
 
 The reproducible quality-gate commands, measured local results, and release boundaries are documented in [docs/CI_BASELINE.md](docs/CI_BASELINE.md). Sellable SKU and forbidden claims: [docs/PRODUCT.md](docs/PRODUCT.md).
 
-**Status:** developer preview on branch `dev`. Not a production-certified product. Do not invoice against Compose `direct` mode.
+**Status:** developer preview on branch `dev`. The sold SKU is intelligent routing (Router + Mind). See [docs/PRODUCT.md](docs/PRODUCT.md). Not production-certified. Do not invoice against Compose `direct` mode.
 
 Self-hosted AI gateway: classify prompts for purpose and sensitivity, route to an allowed model, and record the decision. Paid/production installs set `KUBEMIND_DEPLOYMENT=production` (KeyMint credentials, API keys required). Direct provider keys are laptop/migration only. Agents are preview and off in Helm.
 

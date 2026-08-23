@@ -26,7 +26,11 @@ from router.cache.semantic import signature as cache_signature
 from router.ratelimit import RateLimiter
 from router.usage import UsageTracker
 from router.tracer import TracerClient
-from router.mind_client import MindClient
+from router.mind_client import (
+    STATUS_UNAVAILABLE,
+    MindClient,
+    RetrievalOutcome,
+)
 from router.intent import (
     IntentClassifier,
     IntentResult,
@@ -42,6 +46,7 @@ from router.auth import (
     Authenticator,
     cors_origins,
     deployment_profile,
+    is_production,
 )
 from router import metrics as router_metrics
 from router.feedback import FeedbackConfig, FeedbackLog
@@ -245,6 +250,7 @@ def _enrich(
     policy_action: str = "allow",
     egress_class: str = "any",
     retrieval_used: bool = False,
+    retrieval_status: Optional[str] = None,
     distance: Optional[float] = None,
     similarity: Optional[float] = None,
 ) -> Dict[str, Any]:
@@ -261,6 +267,8 @@ def _enrich(
     response["policy_action"] = policy_action
     response["egress_class"] = egress_class
     response["retrieval_used"] = retrieval_used
+    if retrieval_status:
+        response["retrieval_status"] = retrieval_status
     if distance is not None:
         response["distance"] = round(distance, 6)
         response["similarity"] = round(
@@ -522,17 +530,31 @@ async def _dispatch_chat(
 
     # ── 5) Retrieval augmentation ────────────────────────────────
     retrieval_used = False
-    if profile.retrieval and mind_client and mind_client.enabled:
-        results = await mind_client.query(
-            classification_text, workspace_id, top_k=profile.retrieval_top_k
-        )
-        context = mind_client.format_context(results)
-        if context:
+    retrieval_status = None
+    if profile.retrieval:
+        outcome = RetrievalOutcome(STATUS_UNAVAILABLE)
+        if mind_client:
+            outcome = await mind_client.retrieve(
+                classification_text, workspace_id, top_k=profile.retrieval_top_k
+            )
+        retrieval_status = outcome.status
+        record.retrieval_status = outcome.status
+        record.retrieval_hits = len(outcome.hits)
+        if outcome.status == STATUS_UNAVAILABLE and is_production():
+            record.status = "error"
+            record.error = "retrieval_unavailable"
+            record.billable = False
+            record.latency_ms = (time.perf_counter() - t0) * 1000
+            await _emit_decision(record)
+            raise HTTPException(
+                status_code=503,
+                detail="Knowledge retrieval unavailable",
+            )
+        if outcome.used:
             retrieval_used = True
             record.retrieval_used = True
-            record.retrieval_hits = len(results)
             req = req.model_copy(
-                update={"messages": _prepend_context(req.messages, context)}
+                update={"messages": _prepend_context(req.messages, outcome.context)}
             )
 
     # ── 6) Route ─────────────────────────────────────────────────
@@ -663,12 +685,17 @@ async def _dispatch_chat(
         policy_action=verdict.action.value,
         egress_class=verdict.egress_class,
         retrieval_used=retrieval_used,
+        retrieval_status=retrieval_status,
     )
     out["routing_decision"] = {
         "reason_code": record.route_reason_code,
+        "intent": record.intent,
+        "profile": record.profile,
         "considered_providers": record.considered_pool,
         "eligible_providers": record.eligible_pool,
         "selected_provider": provider.name,
+        "retrieval_status": retrieval_status,
+        "retrieval_hits": record.retrieval_hits,
     }
 
     record.provider = provider.name

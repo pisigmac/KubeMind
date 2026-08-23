@@ -14,6 +14,7 @@ deployment: production
 
 replicas:
   router: 2
+  # Mind is part of the sold SKU (knowledge-aware routing), not an add-on.
   mind: 1
   # Agents are preview: filesystem/shell tools are not a production sandbox.
   agents: 0

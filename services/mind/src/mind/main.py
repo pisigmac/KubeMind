@@ -107,6 +107,7 @@ app.add_middleware(
 )
 
 authenticator = Authenticator.from_config()
+authenticator.assert_production_safe("mind")
 print(authenticator.startup_banner("mind"))
 
 

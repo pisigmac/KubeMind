@@ -14,6 +14,7 @@ and always win.
 | `POLICY_LOCAL_ONLY` | Sensitivity policy restricted dispatch to local providers. |
 | `CLASSIFIER_LOW_CONFIDENCE_FALLBACK` | Intent classification abstained and used the general profile. |
 | `CLASSIFIER_FAILURE_FALLBACK` | Classification failed safely and used the general profile. |
+| `RETRIEVAL_UNAVAILABLE` | Knowledge profile could not reach Mind. Production fails closed (503). |
 
 Reason codes are operational metadata, not provider quality claims. Native
 provider errors, prompts, credentials, model responses, and internal exception

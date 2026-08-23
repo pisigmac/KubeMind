@@ -147,6 +147,7 @@ class DecisionRecord(BaseModel):
 
     retrieval_used: bool = False
     retrieval_hits: int = 0
+    retrieval_status: Optional[str] = None
 
     cache_hit: bool = False
     cache_type: Optional[str] = None

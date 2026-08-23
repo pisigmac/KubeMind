@@ -1,25 +1,44 @@
 """Client for the mind service.
 
-Lets the router *assemble* a request rather than just forward it: when the
-classifier says a prompt is asking about workspace knowledge, the router
-retrieves that knowledge and injects it before dispatch. A gateway that does
-not own a memory service cannot do this.
+The router owns dispatch. Mind owns tenant-scoped knowledge. When a profile
+asks for retrieval, the router queries Mind and injects context before the
+provider call. That is the intelligent-routing product, not a sidecar.
 
-Retrieval is best-effort. If mind is slow or down the request proceeds without
-context, because a degraded answer beats a failed one.
+Statuses are distinct on purpose:
+
+- ``used`` — context was attached
+- ``empty`` — Mind answered; the corpus had nothing (allowed)
+- ``unavailable`` — Mind down, timeout, or error. Production fails closed.
+  Local Compose may continue and must label the miss.
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+STATUS_USED = "used"
+STATUS_EMPTY = "empty"
+STATUS_UNAVAILABLE = "unavailable"
 
 DEFAULT_CONTEXT_HEADER = (
     "Use the following retrieved context to answer. "
     "If it does not contain the answer, say so rather than guessing.\n\n"
 )
+
+
+@dataclass
+class RetrievalOutcome:
+    status: str
+    hits: List[Dict[str, Any]] = field(default_factory=list)
+    context: str = ""
+
+    @property
+    def used(self) -> bool:
+        return self.status == STATUS_USED
 
 
 class MindClient:
@@ -65,9 +84,9 @@ class MindClient:
 
     async def query(
         self, query: str, workspace_id: str, top_k: int = 4
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         if not self.enabled or not self.client or not query.strip():
-            return []
+            return None
         headers = {"X-Workspace-ID": workspace_id}
         # The router retrieves for every tenant, so it authenticates as a
         # service and names the real caller in the header.
@@ -83,11 +102,24 @@ class MindClient:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"[router] retrieval failed: {e}")
-            return []
+            print(f"[router] retrieval unavailable: {e}")
+            return None
 
         results = data.get("results") or data.get("nodes") or []
         return results if isinstance(results, list) else []
+
+    async def retrieve(
+        self, query: str, workspace_id: str, top_k: int = 4
+    ) -> RetrievalOutcome:
+        if not self.enabled or not self.client or not query.strip():
+            return RetrievalOutcome(STATUS_UNAVAILABLE)
+        hits = await self.query(query, workspace_id, top_k=top_k)
+        if hits is None:
+            return RetrievalOutcome(STATUS_UNAVAILABLE)
+        context = self.format_context(hits)
+        if not context:
+            return RetrievalOutcome(STATUS_EMPTY, hits=hits)
+        return RetrievalOutcome(STATUS_USED, hits=hits, context=context)
 
     def format_context(self, results: List[Dict[str, Any]]) -> str:
         if not results:

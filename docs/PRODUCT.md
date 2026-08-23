@@ -1,60 +1,89 @@
 # KubeMind product
 
-Status: `dev` branch — not production-certified, not sold yet  
-Audience: operators and implementers
+Status: `dev` — developer preview, not yet sold  
+Branch: `dev` only. Do not ship `master`.
 
-KubeMind is sold as a **self-hosted AI gateway**, not as Zetakube and not as
-an autonomous-agent platform. This file is the SKU. Marketing pages must not
-outrank it.
+## Naming (do not blur this)
+
+| Name | What it is |
+|---|---|
+| **KubeMind** | The product you sell |
+| **Router** | Intelligent routing: classify, govern, choose a model, attach knowledge |
+| **Mind** | The knowledge store the router queries (hybrid search, tenant-scoped) |
+| **Sentinel** | Decision/audit log. Included, not a second SKU |
+| **Agents** | Not the product. Preview. Off in Helm |
+
+Customers buy **intelligent routing**. That is the Router. Mind is how routing
+becomes knowledge-aware. Selling “Mind” as the router, or selling the router
+without Mind, is the wrong product.
+
+KubeMind is **not** Zetakube, not an agent platform, and not a GPU scheduler.
 
 ## What we sell (v1)
 
-| SKU | Components | Customer job |
-|---|---|---|
-| **KubeMind Gateway** | Router, Sentinel, Dashboard | Classify intent, enforce sensitivity policy, route to an allowed model, record a decision |
-| **KubeMind Knowledge** (add-on) | Mind | Tenant-isolated retrieval that the router may attach |
-| **Not sold** | Agents | Preview only. Shell/filesystem tools are not a production sandbox |
+One SKU: **KubeMind** — self-hosted intelligent AI gateway.
 
-Credentials in production go through **KeyMint**. KubeMind must not hold
-long-lived provider keys in a paid deployment.
+```text
+prompt
+  → auth (workspace from API key)
+  → sensitivity policy (never the classifier)
+  → intent classification (may abstain)
+  → profile (pool, model, retrieval?)
+  → Mind retrieval when the profile says knowledge
+  → dispatch to an eligible provider (KeyMint in production)
+  → explainable routing_decision + Sentinel record
+```
 
-## Production deployment contract
+Included in the SKU: Router, Mind, Sentinel, Dashboard.  
+Excluded: Agents.
 
-Set `KUBEMIND_DEPLOYMENT=production`. The process then **refuses to start** if:
+Credentials in production: **KeyMint only**. Direct provider keys are a laptop
+mode (`KUBEMIND_DEPLOYMENT=local`).
 
-- API keys are missing (open mode that trusts `X-Workspace-ID`)
-- `credential_mode` / `KUBEMIND_CREDENTIAL_MODE` is `direct`
+## Architecture that we are locking
 
-Local Compose remains `KUBEMIND_DEPLOYMENT=local` so a laptop can run Ollama
-in direct mode. That stack is a developer preview. It is not the product you
-invoice.
+1. **Router stays in front.** Mind has no public “pick a model” API. Knowledge
+   is retrieved, then the router dispatches.
+2. **Governance does not use the classifier.** Sensitivity/PII/injection can
+   block or force `local_only` even if intent said `general`.
+3. **Knowledge intents require Mind in production.** Empty results are allowed
+   (nothing in the corpus). Mind down, timeout, or 5xx is `RETRIEVAL_UNAVAILABLE`
+   and fails closed. Local Compose may continue without context and must label it.
+4. **Silent degradation is not a feature.** A knowledge question answered as
+   if retrieval succeeded, when it did not, is a product defect.
+5. **Explain every route.** Responses include intent, profile, policy,
+   selected provider, retrieval status, and a stable reason code. No prompts,
+   keys, or provider URLs in that object.
 
-Helm defaults: `credentialMode: keymint`, `auth.required: true`, Agents
-replicas `0`.
+## Production contract
 
-## Claims that are allowed
+`KUBEMIND_DEPLOYMENT=production` refuses to start if:
 
-- Intent classification plus a **policy engine that does not trust the classifier** for sensitivity
-- Workspace derived from API key, not from a caller-controlled header
-- KeyMint mode: metadata-only providers; capabilities redeemed at the proxy
-- Deterministic policy reason codes on the Runtime path
-- Local `make ci` as a quality gate, not as an SLA
+- API keys are missing (open mode / trusted `X-Workspace-ID`)
+- credential mode is `direct`
 
-## Claims that are forbidden until evidenced
+Helm defaults: `deployment: production`, `credentialMode: keymint`,
+`auth.required: true`, Mind replicas ≥ 1, Agents replicas `0`.
 
-- “World’s first”, cheapest, best model, residency, or uptime guarantees
-- Production-grade agent missions or shell isolation
-- Live-provider cost savings versus explicit routing
-- Hosted SaaS multi-tenant KubeMind (this SKU is self-hosted)
+## Claims allowed vs forbidden
 
-## Release bar before a paying customer
+Allowed: intent-aware routing; policy independent of the classifier;
+workspace from API key; KeyMint-held provider secrets; retrieval scoped by
+workspace; explainable `routing_decision`; `make ci` as a quality gate.
 
-1. Clean `dev` commit; `make ci` from a fresh clone
-2. Helm install with KeyMint, two workspaces, cross-tenant denial
-3. Revoke-during-use and KeyMint outage fail closed
-4. Backup/restore of Postgres (and Redis if used for cache)
-5. Agents remain off unless the customer signs a preview waiver
-6. Dependency-license review and a digest-pinned image
-7. Named on-call and a rollback that disables admission
+Forbidden until evidenced: world’s first, cheapest, best model, residency,
+uptime SLA, agent autonomy, live-provider savings vs explicit routing,
+hosted multi-tenant SaaS.
 
-Until that list is green, the honest status is **developer preview on `dev`**.
+## Remaining bar before a paying customer
+
+1. `make ci` from a fresh clone of `dev`
+2. Two-workspace Helm+KeyMint: cross-tenant knowledge denial
+3. Knowledge prompt + Mind down → 503, not a fluent ungrounded answer
+4. Knowledge prompt + empty corpus → answer labelled `retrieval_status=empty`
+5. Revoke-during-use and KeyMint outage fail closed
+6. Postgres backup/restore
+7. Digest-pinned images and license review
+8. On-call and a rollback that stops admission
+
+Until that list is green, status is **developer preview**.

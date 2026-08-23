@@ -349,40 +349,77 @@ class TestStreaming:
 
 class TestRetrieval:
     def test_retrieval_intent_augments_from_mind(self, client, monkeypatch):
+        from router.mind_client import RetrievalOutcome, STATUS_USED
+
         class StubMind:
             enabled = True
 
-            async def query(self, q, ws, top_k=4):
-                return [{"content": "Expenses are reimbursed monthly.", "source": "handbook"}]
-
-            def format_context(self, results):
-                return "CONTEXT: " + results[0]["content"]
+            async def retrieve(self, q, ws, top_k=4):
+                return RetrievalOutcome(
+                    STATUS_USED,
+                    hits=[{"content": "Expenses are reimbursed monthly.", "source": "handbook"}],
+                    context="CONTEXT: Expenses are reimbursed monthly.",
+                )
 
         monkeypatch.setattr(m, "mind_client", StubMind())
         m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
         body = chat(client, "what does the handbook say").json()
         assert body["intent"] == "rag"
         assert body["retrieval_used"] is True
+        assert body["retrieval_status"] == "used"
+        assert body["routing_decision"]["retrieval_status"] == "used"
 
-        # The retrieved context reached the provider as a system message.
         sent = m.registry.providers["ollama"].last_request
         assert any("CONTEXT:" in msg.content for msg in sent.messages)
 
-    def test_retrieval_failure_is_not_fatal(self, client, monkeypatch):
+    def test_empty_corpus_is_labelled_not_pretended(self, client, monkeypatch):
+        from router.mind_client import RetrievalOutcome, STATUS_EMPTY
+
+        class EmptyMind:
+            enabled = True
+
+            async def retrieve(self, q, ws, top_k=4):
+                return RetrievalOutcome(STATUS_EMPTY)
+
+        monkeypatch.setattr(m, "mind_client", EmptyMind())
+        m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
+        body = chat(client, "what does the handbook say").json()
+        assert body["intent"] == "rag"
+        assert body["retrieval_used"] is False
+        assert body["retrieval_status"] == "empty"
+
+    def test_local_retrieval_outage_is_labelled(self, client, monkeypatch):
+        from router.mind_client import RetrievalOutcome, STATUS_UNAVAILABLE
+
         class BrokenMind:
             enabled = True
 
-            async def query(self, q, ws, top_k=4):
-                return []
-
-            def format_context(self, results):
-                return ""
+            async def retrieve(self, q, ws, top_k=4):
+                return RetrievalOutcome(STATUS_UNAVAILABLE)
 
         monkeypatch.setattr(m, "mind_client", BrokenMind())
+        monkeypatch.delenv("KUBEMIND_DEPLOYMENT", raising=False)
         m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
         body = chat(client, "what does the handbook say").json()
         assert body["retrieval_used"] is False
+        assert body["retrieval_status"] == "unavailable"
         assert body["intent"] == "rag"
+
+    def test_production_retrieval_outage_fails_closed(self, client, monkeypatch):
+        from router.mind_client import RetrievalOutcome, STATUS_UNAVAILABLE
+
+        class BrokenMind:
+            enabled = True
+
+            async def retrieve(self, q, ws, top_k=4):
+                return RetrievalOutcome(STATUS_UNAVAILABLE)
+
+        monkeypatch.setattr(m, "mind_client", BrokenMind())
+        monkeypatch.setenv("KUBEMIND_DEPLOYMENT", "production")
+        m.semantic_cache.vectors = {"what does the handbook say": [0.0, 1.0, 0.0]}
+        response = chat(client, "what does the handbook say")
+        assert response.status_code == 503
+        assert "retrieval" in response.json()["detail"].lower()
 
 
 class TestObservability:
