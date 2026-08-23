@@ -38,6 +38,8 @@ func main() {
 		commands.Down(cfg)
 	case "status":
 		commands.Status(cfg)
+	case "top", "monitor":
+		commands.Top(cfg, os.Args[2:])
 	case "chat":
 		commands.Chat(cfg, os.Args[2:])
 	case "analytics":

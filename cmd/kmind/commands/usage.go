@@ -12,6 +12,7 @@ Commands:
   up                Start all services (docker compose up)
   down              Stop all services
   status            Check health of all services
+  top               Live real-time terminal TUI cluster monitor
   chat [model]      Interactive real-time streaming REPL
   logs [service]    Tail logs for a service
 
