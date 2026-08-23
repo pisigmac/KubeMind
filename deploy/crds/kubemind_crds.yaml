@@ -1,0 +1,104 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: aipolicies.gateway.kubemind.io
+spec:
+  group: gateway.kubemind.io
+  names:
+    kind: AIPolicy
+    listKind: AIPolicyList
+    plural: aipolicies
+    singular: aipolicy
+    shortNames:
+      - aipol
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                workspace:
+                  type: string
+                egressPolicy:
+                  type: string
+                  enum: ["allow", "redact", "local_only", "block"]
+                failClosed:
+                  type: boolean
+                maxCostPerHourUSD:
+                  type: number
+                rateLimitRPS:
+                  type: integer
+                dlpKeywords:
+                  type: array
+                  items:
+                    type: string
+                dlpPatterns:
+                  type: array
+                  items:
+                    type: string
+              required: ["workspace", "egressPolicy"]
+            status:
+              type: object
+              properties:
+                active:
+                  type: boolean
+                lastSynced:
+                  type: string
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: airoutes.gateway.kubemind.io
+spec:
+  group: gateway.kubemind.io
+  names:
+    kind: AIRoute
+    listKind: AIRouteList
+    plural: airoutes
+    singular: airoute
+    shortNames:
+      - airt
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                workspace:
+                  type: string
+                model:
+                  type: string
+                defaultProfile:
+                  type: string
+                primaryPool:
+                  type: array
+                  items:
+                    type: string
+                fallbackPool:
+                  type: array
+                  items:
+                    type: string
+                enableSemanticCache:
+                  type: boolean
+                cacheThreshold:
+                  type: number
+              required: ["workspace", "model"]
+            status:
+              type: object
+              properties:
+                active:
+                  type: boolean
+                lastSynced:
+                  type: string
