@@ -192,3 +192,53 @@ class TestConfigParsing:
         assert restored == prompt
 
 
+class TestStreamingDeAnonymization:
+    def test_streaming_chunk_boundary_preservation(self):
+        from kubemind_policy.streaming import StreamingDeAnonymizer
+
+        token_map = {
+            "[KM_PERSON_1]": "Dr. Sarah Connor",
+            "[KM_ADDRESS_1]": "1042 Elm Street",
+        }
+        de_anon = StreamingDeAnonymizer(token_map)
+
+        # Simulating LLM emitting chunks where token is split across multiple chunks
+        chunks = [
+            "Patient ",
+            "[KM_",
+            "PERSON",
+            "_1]",
+            " was admitted at ",
+            "[KM_ADD",
+            "RESS_1]",
+            ".",
+        ]
+        transformed = []
+        for chunk in chunks:
+            out = de_anon.transform_chunk(chunk)
+            if out:
+                transformed.append(out)
+
+        out = de_anon.flush()
+        if out:
+            transformed.append(out)
+
+        full_text = "".join(transformed)
+        assert full_text == "Patient Dr. Sarah Connor was admitted at 1042 Elm Street."
+        assert "[KM_" not in full_text
+
+    def test_streaming_non_token_brackets(self):
+        from kubemind_policy.streaming import StreamingDeAnonymizer
+
+        token_map = {"[KM_PERSON_1]": "Alice"}
+        de_anon = StreamingDeAnonymizer(token_map)
+
+        chunks = ["Indexing array: ", "items[0", "]", " equals ", "[KM_PERSON_1]", "."]
+        transformed = [de_anon.transform_chunk(c) for c in chunks]
+        transformed.append(de_anon.flush())
+
+        full_text = "".join(transformed)
+        assert full_text == "Indexing array: items[0] equals Alice."
+
+
+

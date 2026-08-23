@@ -1,7 +1,9 @@
 """Mock local provider for zero-download fast local development and testing."""
 
+import asyncio
+import json
 import time
-from typing import Any, Dict
+from typing import Any, AsyncIterator, Dict
 
 from router.providers.base import BaseProvider
 
@@ -58,6 +60,50 @@ class MockLocalProvider(BaseProvider):
                 "total_tokens": prompt_tokens + completion_tokens,
             },
         }
+
+    async def chat_stream(self, request: Any) -> AsyncIterator[str]:
+        """Stream chunks via Server-Sent Events."""
+        resp = await self.chat(request)
+        content = resp["choices"][0]["message"]["content"]
+        words = content.split(" ")
+        req_id = resp["id"]
+        model = resp["model"]
+        created = resp["created"]
+
+        for i, word in enumerate(words):
+            chunk_text = word if i == len(words) - 1 else word + " "
+            chunk_data = {
+                "id": req_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": chunk_text},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+            yield f"data: {json.dumps(chunk_data)}\n\n"
+            await asyncio.sleep(0.005)
+
+        # Final stop chunk
+        stop_data = {
+            "id": req_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        yield f"data: {json.dumps(stop_data)}\n\n"
+        yield "data: [DONE]\n\n"
 
     async def check_health(self) -> bool:
         self.healthy = True

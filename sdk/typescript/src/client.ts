@@ -119,6 +119,51 @@ export class KubeMindClient {
   }
 
   /**
+   * Stream chat completion SSE events with real-time de-anonymization applied.
+   */
+  public async *chatStream(
+    params: ChatCompletionParams
+  ): AsyncIterable<any> {
+    const url = `${this.routerUrl}/v1/chat/completions`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        ...params,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new KubeMindError(`Streaming failed: HTTP ${response.status}`, response.status);
+    }
+
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ") && !trimmed.startsWith("data: [DONE]")) {
+          try {
+            yield JSON.parse(trimmed.slice(6));
+          } catch {
+            // Ignore parse errors on partial chunks
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Dispatch a simplified semantic prompt route request to KubeMind router.
    */
   public async route(params: RouteParams): Promise<RouteResponse> {

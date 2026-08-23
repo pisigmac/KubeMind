@@ -341,10 +341,13 @@ class TestFallback:
 
 
 class TestStreaming:
-    def test_stream_is_refused_not_silently_ignored(self, client):
+    def test_stream_returns_sse_chunks(self, client):
         r = chat(client, "hello", stream=True)
-        assert r.status_code == 400
-        assert "stream" in r.json()["detail"].lower()
+        assert r.status_code == 200
+        assert "text/event-stream" in r.headers.get("content-type", "")
+        assert "data: " in r.text
+        assert "[DONE]" in r.text
+
 
 
 class TestRetrieval:

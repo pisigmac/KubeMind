@@ -44,6 +44,28 @@ class KubeMindClient:
             resp.raise_for_status()
             return resp.json()
 
+    def chat_stream(self, model: str, messages: List[Dict[str, str]], **kwargs):
+        """
+        Stream chat completion tokens in real-time with de-anonymization applied.
+        """
+        import json
+        url = f"{self.router_url}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            **kwargs
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            with client.stream("POST", url, headers=self.headers, json=payload) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                        try:
+                            yield json.loads(line[6:])
+                        except Exception:
+                            continue
+
     def route(self, prompt: str, **kwargs) -> Dict[str, Any]:
         """
         Sends a prompt to KubeMind Router's intent routing proxy directly.

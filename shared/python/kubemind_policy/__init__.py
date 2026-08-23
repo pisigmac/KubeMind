@@ -26,6 +26,7 @@ from kubemind_policy.ner import (
     NamedEntity,
     get_default_ner,
 )
+from kubemind_policy.streaming import StreamingDeAnonymizer
 
 __all__ = [
     "DEFAULT_MODES",
@@ -43,4 +44,5 @@ __all__ = [
     "LocalNEREngine",
     "NamedEntity",
     "get_default_ner",
+    "StreamingDeAnonymizer",
 ]

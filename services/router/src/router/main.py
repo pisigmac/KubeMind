@@ -9,8 +9,10 @@ from typing import Optional, Any, Dict, List, Tuple
 from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from kubemind_policy.streaming import StreamingDeAnonymizer
+from kubemind_policy.redaction import restore_string
 
 from router.models import (
     ChatRequest,
@@ -339,14 +341,6 @@ async def _dispatch_chat(
         model=req.model,
     )
 
-    if req.stream:
-        # Accepting `stream: true` and returning a complete body silently lies
-        # to the client. Refuse until SSE passthrough exists.
-        raise HTTPException(
-            status_code=400,
-            detail="Streaming is not supported by this router yet; set stream=false",
-        )
-
     bypass_cache = _cache_bypassed(request, req.enable_cache)
 
     # Rate limit
@@ -632,6 +626,70 @@ async def _dispatch_chat(
             status_code=503, detail=f"No healthy provider available for model: {req.model}"
         )
 
+    if req.stream:
+        selected_candidate = chain[0] if chain else None
+        if not selected_candidate:
+            record.status = "error"
+            record.error = "no_eligible_provider"
+            await _emit_decision(record)
+            raise HTTPException(status_code=503, detail="No eligible provider available for streaming")
+
+        async def sse_event_stream():
+            de_anon = StreamingDeAnonymizer(active_token_map)
+            if hasattr(selected_candidate, "chat_stream"):
+                async for raw_chunk in selected_candidate.chat_stream(req):
+                    if raw_chunk.startswith("data: ") and not raw_chunk.startswith("data: [DONE]"):
+                        payload_str = raw_chunk[6:].strip()
+                        try:
+                            data = json.loads(payload_str)
+                            choices = data.get("choices", [])
+                            if choices and "delta" in choices[0]:
+                                delta_content = choices[0]["delta"].get("content", "")
+                                if delta_content:
+                                    transformed = de_anon.transform_chunk(delta_content)
+                                    choices[0]["delta"]["content"] = transformed
+                                    data["choices"] = choices
+                                    yield f"data: {json.dumps(data)}\n\n"
+                                else:
+                                    yield raw_chunk
+                            else:
+                                yield raw_chunk
+                        except Exception:
+                            yield raw_chunk
+                    elif raw_chunk.startswith("data: [DONE]"):
+                        flushed = de_anon.flush()
+                        if flushed:
+                            flush_chunk = {
+                                "id": f"chatcmpl-{int(time.time()*1000)}",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": req.model,
+                                "choices": [{"index": 0, "delta": {"content": flushed}, "finish_reason": None}],
+                            }
+                            yield f"data: {json.dumps(flush_chunk)}\n\n"
+                        yield "data: [DONE]\n\n"
+                    else:
+                        yield raw_chunk
+            else:
+                resp = await selected_candidate.chat(req)
+                content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+                restored = restore_string(content, active_token_map)
+                chunk = {
+                    "id": resp.get("id", f"chatcmpl-{int(time.time()*1000)}"),
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": req.model,
+                    "choices": [{"index": 0, "delta": {"content": restored}, "finish_reason": "stop"}],
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+
+        record.status = "success"
+        record.provider = selected_candidate.name
+        record.latency_ms = (time.perf_counter() - t0) * 1000
+        await _emit_decision(record)
+        return StreamingResponse(sse_event_stream(), media_type="text/event-stream")
+
     response: Optional[Dict[str, Any]] = None
     provider = None
     used_fallback = False
@@ -891,6 +949,9 @@ async def chat_completions(
     result = await _dispatch_chat(
         req, request, auth.workspace_id, authenticated=auth.authenticated
     )
+    if isinstance(result, StreamingResponse):
+        return result
+
     headers = {
         "X-KubeMind-Trace-ID": str(result.get("id") or uuid.uuid4()),
         "X-KubeMind-Intent": str(result.get("intent") or "default"),
