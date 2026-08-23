@@ -48,6 +48,8 @@ func main() {
 		commands.Verify(cfg, os.Args[2:])
 	case "mcp":
 		commands.MCP(cfg, os.Args[2:])
+	case "red-team", "redteam":
+		commands.RedTeam(cfg, os.Args[2:])
 	case "agent":
 		commands.Agent(cfg, os.Args[2:])
 	case "knowledge":

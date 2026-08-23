@@ -19,6 +19,7 @@ Commands:
   analytics [hours] Show CFO-level token usage and spend breakdown (default: 24h)
   verify            Cryptographically verify the Sentinel SHA-256 audit ledger
   mcp               Start Model Context Protocol (MCP) JSON-RPC server for Cursor/Claude
+  red-team          Run automated adversarial jailbreak & injection audit benchmark
 
   agent run "<prompt>"     Run a one-shot mission
   agent repl               Interactive agent session

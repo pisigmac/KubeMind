@@ -23,7 +23,7 @@ class NamedEntity:
 
 
 # Regex patterns for unstructured entities when running local heuristic NER
-_HONORIFICS = r"\b(?:Dr|Mr|Mrs|Ms|Prof|Judge|Senator|President|Officer|Captain)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b"
+_HONORIFICS = r"\b(?:Doctor|Dr|Mr|Mrs|Ms|Prof|Professor|Judge|Senator|President|Officer|Captain)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b"
 _CAPITALIZED_NAME = r"\b(?:[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)\b"
 _STREET_ADDRESS = r"\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Road|Rd|Drive|Dr|Lane|Ln|Way|Court|Ct|Suite|Apt|Terrace|Ter|Place|Pl|Square|Sq|Highway|Hwy|Parkway|Pkwy)\.?\b"
 _ORG_SUFFIXES = r"\b[A-Z][A-Za-z0-9&]+(?:\s+[A-Z][A-Za-z0-9&]+)*\s+(?:Inc|Corp|LLC|Ltd|Technologies|Enterprises|Holdings|Group|GmbH|Co)\.?\b"
@@ -31,7 +31,7 @@ _ORG_SUFFIXES = r"\b[A-Z][A-Za-z0-9&]+(?:\s+[A-Z][A-Za-z0-9&]+)*\s+(?:Inc|Corp|L
 _PATTERNS: Dict[str, List[re.Pattern]] = {
     "person": [
         re.compile(_HONORIFICS),
-        re.compile(r"(?i)\b(?:patient|client|user|employee|author|agent)\s*[:=]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b"),
+        re.compile(r"(?i)\b(?:patient|client|user|employee|author|agent)\s*[:=\s]+\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b"),
     ],
     "address": [
         re.compile(_STREET_ADDRESS, re.IGNORECASE),

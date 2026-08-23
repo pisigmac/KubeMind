@@ -30,6 +30,7 @@ from kubemind_policy.streaming import StreamingDeAnonymizer
 from kubemind_policy.dlp import CustomDLPEngine, get_default_dlp
 from kubemind_policy.wasm_hooks import WasmHookRunner, get_default_hook_runner
 from kubemind_policy.multimodal import MultimodalPrivacyEngine, get_default_multimodal
+from kubemind_policy.audio import AudioPrivacyEngine, get_default_audio_privacy
 
 __all__ = [
     "DEFAULT_MODES",
@@ -54,4 +55,6 @@ __all__ = [
     "get_default_hook_runner",
     "MultimodalPrivacyEngine",
     "get_default_multimodal",
+    "AudioPrivacyEngine",
+    "get_default_audio_privacy",
 ]
