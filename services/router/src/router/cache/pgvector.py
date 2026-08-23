@@ -41,6 +41,10 @@ CREATE INDEX IF NOT EXISTS idx_semantic_cache_lookup
 
 CREATE INDEX IF NOT EXISTS idx_semantic_cache_created
     ON semantic_cache (created_at);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_cache_hnsw
+    ON semantic_cache USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 """
 
 
@@ -70,9 +74,14 @@ class PgVectorStore:
                 for stmt in DDL.format(dims=self.dims).split(";"):
                     sql = stmt.strip()
                     if sql:
-                        conn.execute(text(sql))
+                        try:
+                            conn.execute(text(sql))
+                        except Exception:
+                            if "INDEX" in sql.upper():
+                                continue
+                            raise
             self.is_ready = True
-            print(f"[router] pgvector semantic cache ready (dims={self.dims})")
+            print(f"[router] pgvector semantic cache ready with HNSW indexing (dims={self.dims})")
             return True
         except Exception as e:
             print(f"[router] pgvector unavailable ({e}); semantic cache falls back")
