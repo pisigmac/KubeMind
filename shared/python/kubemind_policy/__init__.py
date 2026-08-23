@@ -27,6 +27,7 @@ from kubemind_policy.ner import (
     get_default_ner,
 )
 from kubemind_policy.streaming import StreamingDeAnonymizer
+from kubemind_policy.dlp import CustomDLPEngine, get_default_dlp
 
 __all__ = [
     "DEFAULT_MODES",
@@ -45,4 +46,6 @@ __all__ = [
     "NamedEntity",
     "get_default_ner",
     "StreamingDeAnonymizer",
+    "CustomDLPEngine",
+    "get_default_dlp",
 ]

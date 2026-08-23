@@ -46,6 +46,8 @@ func main() {
 		commands.Analytics(cfg, os.Args[2:])
 	case "verify":
 		commands.Verify(cfg, os.Args[2:])
+	case "mcp":
+		commands.MCP(cfg, os.Args[2:])
 	case "agent":
 		commands.Agent(cfg, os.Args[2:])
 	case "knowledge":
