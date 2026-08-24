@@ -33,7 +33,7 @@ class Role(str, Enum):
 
 
 ROLE_SCOPES: Dict[str, Set[str]] = {
-    Role.ADMIN.value: {"*"},
+    Role.ADMIN.value: {"*", "usage:org"},
     Role.DEVELOPER.value: {
         "chat",
         "route",

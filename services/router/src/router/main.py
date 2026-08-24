@@ -1301,6 +1301,18 @@ async def usage_analytics(
         }
     return await usage_tracker.get_analytics(workspace_id, window_hours=window_hours)
 
+@app.get("/v1/usage/org-analytics")
+async def org_usage_analytics(
+    request: Request, window_hours: int = 720, auth=Depends(get_auth)
+):
+    """Aggregate CFO-level financial and usage analytics across all workspaces."""
+    auth.assert_scope("usage:org")
+    if not usage_tracker:
+        raise HTTPException(
+            status_code=503, detail="Usage tracking is not initialized"
+        )
+    return await usage_tracker.get_org_analytics(window_hours=window_hours)
+
 
 @app.get("/v1/routing/report")
 async def routing_report(auth=Depends(get_auth)):

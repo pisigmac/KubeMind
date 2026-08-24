@@ -187,6 +187,86 @@ class UsageTracker:
                 "models": models,
             }
 
+    async def get_org_analytics(self, window_hours: int = 720) -> Dict[str, Any]:
+        """Aggregate cross-workspace usage for the entire organization."""
+        if not self.session_maker:
+            return {
+                "window_hours": window_hours,
+                "total_requests": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "total_spend": 0.0,
+                "workspace_breakdown": {},
+                "provider_breakdown": {},
+            }
+
+        since = datetime.utcnow() - timedelta(hours=window_hours)
+        async with self.session_maker() as session:
+            from sqlalchemy import func, select
+
+            # Overall aggregate
+            stmt = select(
+                func.count().label("total_requests"),
+                func.coalesce(func.sum(UsageRecord.prompt_tokens), 0).label("prompt_tokens"),
+                func.coalesce(func.sum(UsageRecord.completion_tokens), 0).label("completion_tokens"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("total_tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("total_spend"),
+            ).where(
+                UsageRecord.created_at >= since,
+            )
+            res = await session.execute(stmt)
+            row = res.one()
+
+            # Workspace breakdown
+            w_stmt = select(
+                UsageRecord.workspace_id,
+                func.count().label("requests"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("spend_usd"),
+            ).where(
+                UsageRecord.created_at >= since,
+            ).group_by(UsageRecord.workspace_id)
+            w_res = await session.execute(w_stmt)
+            workspaces = {
+                r.workspace_id: {
+                    "requests": r.requests,
+                    "tokens": r.tokens,
+                    "spend_usd": round(r.spend_usd, 6),
+                }
+                for r in w_res.all()
+            }
+
+            # Provider breakdown
+            p_stmt = select(
+                UsageRecord.provider,
+                func.count().label("requests"),
+                func.coalesce(func.sum(UsageRecord.total_tokens), 0).label("tokens"),
+                func.coalesce(func.sum(UsageRecord.estimated_cost), 0.0).label("spend_usd"),
+            ).where(
+                UsageRecord.created_at >= since,
+            ).group_by(UsageRecord.provider)
+            p_res = await session.execute(p_stmt)
+            providers = {
+                r.provider: {
+                    "requests": r.requests,
+                    "tokens": r.tokens,
+                    "spend_usd": round(r.spend_usd, 6),
+                }
+                for r in p_res.all()
+            }
+
+            return {
+                "window_hours": window_hours,
+                "total_requests": row.total_requests,
+                "prompt_tokens": row.prompt_tokens,
+                "completion_tokens": row.completion_tokens,
+                "total_tokens": row.total_tokens,
+                "total_spend": round(row.total_spend, 6),
+                "workspace_breakdown": workspaces,
+                "provider_breakdown": providers,
+            }
+
     async def close(self):
         if self.engine:
             await self.engine.dispose()
