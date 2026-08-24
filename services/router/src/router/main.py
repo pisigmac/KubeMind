@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Optional, Any, Dict, List, Tuple
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from kubemind_policy.streaming import StreamingDeAnonymizer
@@ -85,8 +85,6 @@ async def lifespan(app: FastAPI):
     cache = CacheManager()
     await cache.connect()
 
-    rate_limiter = RateLimiter(redis_client=cache.client)
-
     usage_tracker = UsageTracker()
     await usage_tracker.init()
 
@@ -95,6 +93,13 @@ async def lifespan(app: FastAPI):
 
     registry = ProviderRegistry(cache=cache, usage_tracker=usage_tracker)
     await registry.load_providers()
+
+    rl_config = registry.config.get("ratelimit", {})
+    rate_limiter = RateLimiter(
+        redis_client=cache.client,
+        default_rpm=rl_config.get("default_rpm", 60),
+        default_tpm=rl_config.get("default_tpm", 10000)
+    )
 
     cache_ttl = int(registry.config.get("cache", {}).get("ttl_seconds", 300))
     semantic_cache = SemanticCache.from_config(registry.config, redis_client=cache.client)
@@ -344,12 +349,24 @@ async def _dispatch_chat(
     bypass_cache = _cache_bypassed(request, req.enable_cache)
 
     # Rate limit
+    rl_headers = {}
     if rate_limiter:
         allowed, retry_after = await rate_limiter.check(workspace_id, req.model)
         if not allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_rpm, 0, retry_after, True)
             raise HTTPException(
-                status_code=429, detail=f"Rate limit exceeded. Retry after {retry_after}s"
+                status_code=429, detail=f"Rate limit exceeded. Retry after {retry_after}s", headers=headers
             )
+        
+        token_count = req.max_tokens or 1000
+        tpm_allowed, tpm_retry = await rate_limiter.check_tpm(workspace_id, req.model, token_count)
+        if not tpm_allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_tpm, 0, tpm_retry, True)
+            raise HTTPException(
+                status_code=429, detail=f"Rate limit exceeded. Retry after {tpm_retry}s", headers=headers
+            )
+        
+        rl_headers = RateLimiter.build_headers(rate_limiter.default_rpm, rate_limiter.default_rpm - 1, 60)
 
     # Policy must execute before every cache read. Serving cached content is
     # still an egress decision and cannot bypass changed Workspace policy.
@@ -490,6 +507,7 @@ async def _dispatch_chat(
             record.route_target = "cache/exact"
             record.latency_ms = latency_ms
             await _emit_decision(record)
+            out["_rl_headers"] = rl_headers
             return _restore_response(out, active_token_map)
     sig = cache_signature(req.model, _system_prompt(req.messages), req.temperature or 0.7)
     partition = (
@@ -543,6 +561,7 @@ async def _dispatch_chat(
             record.route_target = "cache/semantic"
             record.latency_ms = latency_ms
             await _emit_decision(record)
+            out["_rl_headers"] = rl_headers
             return _restore_response(out, active_token_map)
 
     # ── 5) Retrieval augmentation ────────────────────────────────
@@ -808,6 +827,7 @@ async def _dispatch_chat(
         provider.name,
         used_fallback,
     )
+    out["_rl_headers"] = rl_headers
     return _restore_response(out, active_token_map)
 
 
@@ -984,13 +1004,16 @@ async def chat_completions(
     }
     if result.get("retrieval_status"):
         headers["X-KubeMind-Retrieval-Status"] = str(result.get("retrieval_status"))
+        
+    rl_headers = result.pop("_rl_headers", {})
+    headers.update(rl_headers)
 
     return JSONResponse(content=result, headers=headers)
 
 
 @app.post("/v1/route", response_model=RouteResponse)
 async def route_prompt(
-    req: RouteRequest, request: Request, auth=Depends(get_auth)
+    req: RouteRequest, request: Request, response: Response, auth=Depends(get_auth)
 ):
     """Landing/SDK-oriented semantic route endpoint."""
     auth.assert_scope("route")
@@ -1009,6 +1032,10 @@ async def route_prompt(
     result = await _dispatch_chat(
         chat_req, request, auth.workspace_id, authenticated=auth.authenticated
     )
+
+    rl_headers = result.pop("_rl_headers", {})
+    for k, v in rl_headers.items():
+        response.headers[k] = v
 
     content = ""
     choices = result.get("choices") or []
@@ -1045,23 +1072,41 @@ async def route_prompt(
 
 @app.post("/v1/embeddings")
 async def embeddings(
-    req: EmbeddingsRequest, request: Request, auth=Depends(get_auth)
+    req: EmbeddingsRequest, request: Request, response: Response, auth=Depends(get_auth)
 ):
     if not registry:
         raise HTTPException(status_code=503, detail="Gateway not initialized")
+
+    if rate_limiter:
+        allowed, retry_after = await rate_limiter.check(auth.workspace_id, req.model)
+        if not allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_rpm, 0, retry_after, True)
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Retry after {retry_after}s", headers=headers)
+        
+        # for embeddings, max_tokens might not be present, assume 100
+        tpm_allowed, tpm_retry = await rate_limiter.check_tpm(auth.workspace_id, req.model, 100)
+        if not tpm_allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_tpm, 0, tpm_retry, True)
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Retry after {tpm_retry}s", headers=headers)
+            
+        rl_headers = RateLimiter.build_headers(rate_limiter.default_rpm, rate_limiter.default_rpm - 1, 60)
+        for k, v in rl_headers.items():
+            response.headers[k] = v
 
     provider = registry.select_provider(req.model, policy="cost")
     if not provider:
         raise HTTPException(status_code=503, detail="No healthy provider available")
 
     try:
-        response = await provider.embeddings(req)
-        usage = response.get("usage", {})
+        resp_data = await provider.embeddings(req)
+        usage = resp_data.get("usage", {})
         if usage_tracker:
             await usage_tracker.record(
                 auth.workspace_id, provider.name, req.model, usage
             )
-        return JSONResponse(content=response)
+        if rate_limiter:
+            await rate_limiter.record(auth.workspace_id, req.model, usage)
+        return JSONResponse(content=resp_data, headers=dict(response.headers))
     except Exception:
         raise HTTPException(status_code=502, detail="Provider unavailable")
 
@@ -1170,12 +1215,27 @@ async def export_reviewed(auth=Depends(get_auth)):
 
 
 @app.post("/v1/classify")
-async def classify_prompt(payload: Dict[str, Any], auth=Depends(get_auth)):
+async def classify_prompt(payload: Dict[str, Any], response: Response, auth=Depends(get_auth)):
     """Dry-run the classifier and policy without dispatching anywhere.
 
     The eval harness and anyone tuning thresholds needs to see the decision
     without paying for a completion.
     """
+    if rate_limiter:
+        allowed, retry_after = await rate_limiter.check(auth.workspace_id, "classifier")
+        if not allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_rpm, 0, retry_after, True)
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Retry after {retry_after}s", headers=headers)
+        
+        tpm_allowed, tpm_retry = await rate_limiter.check_tpm(auth.workspace_id, "classifier", 100)
+        if not tpm_allowed:
+            headers = RateLimiter.build_headers(rate_limiter.default_tpm, 0, tpm_retry, True)
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded. Retry after {tpm_retry}s", headers=headers)
+            
+        rl_headers = RateLimiter.build_headers(rate_limiter.default_rpm, rate_limiter.default_rpm - 1, 60)
+        for k, v in rl_headers.items():
+            response.headers[k] = v
+
     text = str(payload.get("prompt") or "")
     if not text.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
