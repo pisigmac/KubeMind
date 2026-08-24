@@ -17,9 +17,7 @@ Customers buy **intelligent routing**. That is the Router. Mind is how routing
 becomes knowledge-aware. Selling “Mind” as the router, or selling the router
 without Mind, is the wrong product.
 
-KubeMind is **not** Zetakube, not an agent platform, and not a GPU scheduler.
-Zetakube may call KubeMind for `model.smart`. Zetakube must not require it
-to start, admit Runs, or complete Document Extractor.
+KubeMind is an enterprise AI governance gateway and autonomous control plane.
 
 ## What we sell (v1)
 

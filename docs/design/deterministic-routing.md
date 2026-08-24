@@ -56,8 +56,4 @@ are included.
 
 ## Stability evidence
 
-`tests/fixtures/zetakube-runtime/routing-golden.v1.json` is a synthetic golden
-corpus. Each case executes repeatedly and must produce an identical routing
-decision. The held-out intent evaluation remains a separate probabilistic
-quality gate; deterministic fallback guarantees behavior when confidence is
-low or classification fails, not that classification is always correct.
+Golden test fixtures verify determinism across constraint evaluation, candidate ordering, and deterministic tie-breaking.

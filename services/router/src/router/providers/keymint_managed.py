@@ -6,11 +6,11 @@ from router.providers.base import BaseProvider
 
 
 class KeyMintManagedProvider(BaseProvider):
-    """A selectable remote target that can never dispatch provider traffic.
+    """A selectable remote target that can never dispatch direct provider traffic.
 
-    KubeMind uses this object only for model/policy ranking. The Zetakube
-    Runtime exchanges a Connection reference for a short-lived KeyMint
-    capability and sends the request through KeyMint's proxy.
+    KubeMind uses this object only for model/policy ranking. The router
+    exchanges a Connection reference for a short-lived KeyMint capability
+    and sends the request through KeyMint's proxy.
     """
 
     async def chat(self, request: Any) -> Dict:

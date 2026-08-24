@@ -107,7 +107,6 @@ typecheck:
 	MYPYPATH=services/router/src:shared/python mypy --ignore-missing-imports \
 		services/router/src/router/auth.py \
 		services/router/src/router/keymint_runtime.py \
-		services/router/src/router/zetakube_runtime.py \
 		services/router/src/router/policy.py \
 		shared/python/kubemind_auth shared/python/kubemind_policy
 

@@ -19,9 +19,8 @@ Semantic cache defaults to **pgvector**. Set `semanticCacheBackend=redis` for
 the laptop-scale Redis list backend.
 
 `credentialMode` defaults to `keymint`. In that mode KubeMind stores only
-provider catalog metadata and Zetakube Runtime calls must use scoped KeyMint
-capabilities. Set `credentialMode=direct` only for an explicit self-hosted or
-migration deployment and provide provider keys through a Kubernetes Secret.
+provider catalog metadata and calls must use scoped KeyMint
+Capabilities (`--set credentialMode=direct` is available for offline / local testing).
 The mode is fixed at process startup, appears in `/health`, and never falls
 back automatically.
 

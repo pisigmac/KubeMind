@@ -15,7 +15,7 @@ This audit evaluates the KubeMind codebase from the perspectives of three distin
 
 ### 🔴 Gaps & Friction Points
 *   **Heavy Local Startup**: Even with loosened dependencies, pulling and spinning up the `ollama` container locally for testing is resource-heavy. First-time deployment on standard developer laptops might feel sluggish.
-*   **Distributed Debugging Complexity**: While `routing_decision` exposes transparent reasoning, tracing an unexpected Zetakube cascade fallback across the Router and Sentinel containers still requires manual log tailing (`docker compose logs -f`).
+*   **Distributed Debugging Complexity**: While `routing_decision` exposes transparent reasoning, tracing an unexpected cascade fallback across the Router and Sentinel containers still requires manual log tailing (`docker compose logs -f`).
 *   **Missing Model Provisioning Script**: The newly added `LocalNEREngine` supports ONNX Runtime acceleration, but there is no automated CLI command (e.g., `kmind fetch-models`) to download the required lightweight ONNX weights, forcing users to rely on the fallback regex heuristics out-of-the-box.
 
 ---
@@ -46,5 +46,5 @@ This audit evaluates the KubeMind codebase from the perspectives of three distin
 
 ### 🔴 Vulnerabilities / Attack Vectors
 *   **Inline Processing Latency**: Running regex policy evaluation, NER entity extraction, intent classification, and semantic cache lookups inline adds computation time (even if <50ms) compared to a pure reverse proxy. Competitors can market themselves as "lower latency".
-*   **Ecosystem Breadth**: Proxies like Portkey and LiteLLM boast out-of-the-box integrations with 100+ obscure LLM providers. KubeMind relies on a more curated set of supported endpoints through the Zetakube runtime.
+*   **Ecosystem Breadth**: Proxies like Portkey and LiteLLM boast out-of-the-box integrations with 100+ obscure LLM providers. KubeMind focuses on enterprise standard endpoints (OpenAI, Anthropic, Gemini, Ollama, vLLM) with zero-egress privacy and KMS security.
 *   **Self-Hosted Complexity**: Competitors offer managed SaaS cloud solutions. KubeMind's positioning as a "Kubernetes-native self-hosted control plane" is a massive advantage for data sovereignty, but poses a barrier to entry for smaller startups without DevOps expertise.

@@ -17,7 +17,7 @@ Install all Python dependencies into an isolated environment, install the dashbo
 make ci
 ```
 
-`make ci` gates Python lint, a scoped type check of the router's security and Zetakube contract boundary, Go vet, dashboard lint, all four service test suites, the intent-policy evaluation, high-severity static security findings, high-confidence secret patterns, Python dependency vulnerabilities, and high-severity npm advisories.
+`make ci` gates Python lint, a scoped type check of the router's security and policy boundary, Go vet, dashboard lint, all four service test suites, the intent-policy evaluation, high-severity static security findings, high-confidence secret patterns, Python dependency vulnerabilities, and high-severity npm advisories.
 
 The type gate is deliberately scoped. It does not claim that all legacy Python modules are fully typed. Expanding that scope is follow-up hardening and must not be represented as completed coverage.
 

@@ -1,6 +1,6 @@
-"""Fail-closed KeyMint boundary for the Zetakube runtime path.
+"""Fail-closed KeyMint capability issuance and proxy boundary for KubeMind.
 
-Provider credentials remain inside KeyMint.  KubeMind receives an opaque
+Provider credentials remain inside KeyMint. KubeMind receives an opaque
 Connection resolution containing KeyMint control/proxy credentials, issues a
 single-use capability, and forwards only that capability to KeyMint's proxy.
 Neither request content nor credentials are included in raised errors.
@@ -82,7 +82,7 @@ class KeyMintConfig:
 
 @dataclass(frozen=True)
 class KeyMintConnection:
-    """Trusted resolution of one Zetakube Connection reference.
+    """Trusted resolution of one KeyMint Connection reference.
 
     The virtual-key ID is the KeyMint policy/grant handle. KeyMint derives the
     exact provider-key ID from it. Tokens are excluded from repr so an
@@ -102,7 +102,7 @@ class KeyMintConnection:
 class CapabilityBinding:
     workspace_id: str
     project_id: str
-    zetakube_run_id: str
+    run_id: str
     model: str
     operation: str
     audience: str

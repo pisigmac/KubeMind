@@ -41,7 +41,7 @@ def binding(**overrides):
     values = {
         "workspace_id": "ws_test001",
         "project_id": "project_test001",
-        "zetakube_run_id": "run_test001",
+        "run_id": "run_test001",
         "model": "gpt-4o-mini",
         "operation": "chat.completions",
         "audience": "keymint-provider-proxy",

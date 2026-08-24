@@ -6,8 +6,8 @@ request, Workspace, profile, or model.
 
 | Mode | Intended use | Provider access |
 |---|---|---|
-| `keymint` | Production and Zetakube integration | Connection reference → one-use KeyMint capability → KeyMint proxy |
-| `direct` | Explicit self-hosted development or migration compatibility | Deployment secret → KubeMind provider client |
+| `keymint` | Production zero-trust mode | Connection reference → one-use KeyMint capability → KeyMint proxy |
+| `direct`  | Explicit self-hosted/migration mode | Deployment-secret provider keys configured directly |
 
 Configure `credential_mode` in `services/router/config/gateway.yaml` or set
 `KUBEMIND_CREDENTIAL_MODE` at process startup. The environment value is a
@@ -15,28 +15,26 @@ deployment override. Missing and unknown values fail startup.
 
 ## KeyMint mode
 
-- This is the production default in the committed gateway and Helm values.
-- Every configured provider, including Ollama and vLLM, is catalog metadata;
-  KubeMind does not construct a provider client or retain a provider key.
-- The Zetakube Runtime path resolves one trusted Connection reference, binds
-  tenant/Workspace/Project/Run/model/operation/expiry/one-use/cost scope, and
+- Router provider definitions hold metadata only (model catalog, cost, rate limits, policy constraints).
+- Secret provider credentials (OpenAI/Anthropic/custom keys) remain inside KeyMint.
+- The router resolves one trusted Connection reference, binds
+  an explicit scope (`workspace_id`, `project_id`, `run_id`, `model`, `operation`,
+  `audience`, `expires_at`, `max_cost_micros`), issues a single-use capability, and
   sends only the resulting capability through KeyMint's provider proxy.
-- Expired, revoked, mismatched, malformed, or unavailable capabilities fail
-  closed with stable error codes.
+- KeyMint issues short-lived, HMAC-SHA256-signed capability tokens with audience `keymint-provider-proxy`.
 - KeyMint failure never activates direct mode.
-- The legacy direct chat and embedding endpoints cannot execute catalog-only
-  providers. A Connection-aware product/API surface must invoke the Runtime
-  adapter; until that composition is deployed, these endpoints return no
+- KeyMint revocation, expiry, budget denial, or proxy unreachable returns a safe error code (e.g. `CAPABILITY_DENIED`, `CAPABILITY_EXPIRED`, `CAPABILITY_UNAVAILABLE`).
+- If one KeyMint Connection fails, deterministic routing considers the next
   eligible provider rather than bypassing KeyMint.
 
 ## Direct mode
 
-- Compose defaults to this mode for the current laptop quickstart.
+- Direct mode is an explicit self-hosted compatibility mode.
+- Direct mode accepts provider API keys via environment variables/Kubernetes secrets for local development.
 - Provider credentials must come from deployment secrets/environment, never
   committed YAML, API payloads, traces, caches, or public definitions.
 - Local and cloud provider clients execute inside KubeMind.
 - `/health` reports `credential_mode: direct` and a security warning.
-- Direct mode is not accepted by the Zetakube Runtime adapter.
 
 ## Switching modes
 
