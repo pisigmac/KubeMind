@@ -1,0 +1,100 @@
+namespace: kubemind
+
+image:
+  registry: ""
+  pullPolicy: IfNotPresent
+  router: kubemind/router:0.3.0
+  mind: kubemind/mind:0.3.0
+  agents: kubemind/agents:0.3.0
+  sentinel: kubemind/sentinel:0.3.0
+  dashboard: kubemind/dashboard:0.3.0
+
+# production | local. Production refuses open auth and direct credential mode.
+deployment: production
+
+replicas:
+  router: 2
+  # Mind is part of the sold SKU (knowledge-aware routing), not an add-on.
+  mind: 1
+  # Agents are preview: filesystem/shell tools are not a production sandbox.
+  agents: 0
+  sentinel: 1
+  dashboard: 1
+
+resources:
+  router:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  mind:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 1000m, memory: 2Gi }
+  agents:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  sentinel:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+  dashboard:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+postgres:
+  enabled: true
+  image: pgvector/pgvector:pg16
+  storage: 20Gi
+  database: kubemind
+  user: kubemind
+  # Override in a sealed secret for anything that is not a laptop.
+  password: kubemind
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+
+ollama:
+  enabled: false
+  image: ollama/ollama:latest
+
+# Workspace-bound API keys. Production defaults fail closed when empty.
+auth:
+  apiKeys: ""
+  serviceKey: ""
+  adminKey: ""
+  required: true
+  corsOrigins: "http://localhost:9000"
+
+# Semantic cache backend: redis | pgvector
+semanticCacheBackend: pgvector
+
+# keymint (production) | direct (explicit self-hosted compatibility mode)
+credentialMode: keymint
+
+ingress:
+  enabled: false
+  className: nginx
+  host: kubemind.local
+
+service:
+  type: ClusterIP
+
+# Enterprise Cloud KMS Credentials
+kms:
+  provider: "" # vault | aws | gcp
+  vault:
+    addr: ""
+    k8sRole: "kubemind-router"
+  aws:
+    region: "us-east-1"
+  gcp:
+    projectId: ""
+
+# Observability Integration
+observability:
+  prometheusRule:
+    enabled: false
+  grafanaDashboard:
+    enabled: false
+  tracelens:
+    enabled: false
+    endpoint: "" # e.g. "http://tracelens-collector:8080"
+    token: ""    # Bearer token for TraceLens collector authorization

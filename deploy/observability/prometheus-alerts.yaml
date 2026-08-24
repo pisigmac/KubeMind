@@ -1,0 +1,61 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubemind-alerts
+  namespace: kubemind
+  labels:
+    app.kubernetes.io/name: kubemind
+    role: alert-rules
+spec:
+  groups:
+    - name: kubemind.governance.alerts
+      rules:
+        - alert: HighPolicyViolationRate
+          expr: rate(kubemind_policy_verdicts_total{action="block"}[5m]) > 5
+          for: 2m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "High rate of policy violations detected in KubeMind"
+            description: "Over 5 prompts per second have been blocked by security/privacy guardrails in workspace {{ $labels.workspace }}."
+
+        - alert: TamperedAuditLedgerDetected
+          expr: kubemind_sentinel_tamper_events_total > 0
+          for: 0m
+          labels:
+            severity: critical
+            team: security-compliance
+          annotations:
+            summary: "Sentinel cryptographic SHA-256 ledger integrity failure"
+            description: "A hash chain discrepancy was detected in workspace {{ $labels.workspace }}. Possible unauthorized audit database modification!"
+
+        - alert: ProviderCircuitBreakerOpen
+          expr: kubemind_provider_circuit_state{state="OPEN"} == 1
+          for: 1m
+          labels:
+            severity: high
+            team: platform-ops
+          annotations:
+            summary: "LLM upstream provider circuit breaker tripped"
+            description: "Provider {{ $labels.provider }} has failed consecutive health probes or exceeded latency thresholds. Traffic diverted to local fallbacks."
+
+        - alert: HighModelLatency
+          expr: histogram_quantile(0.95, sum(rate(kubemind_request_duration_seconds_bucket[5m])) by (le, provider)) > 5.0
+          for: 3m
+          labels:
+            severity: warning
+            team: platform-ops
+          annotations:
+            summary: "P95 model response latency exceeds 5.0s"
+            description: "Provider {{ $labels.provider }} P95 latency is currently {{ $value }}s."
+
+        - alert: CFOBudgetThresholdWarning
+          expr: kubemind_hourly_spend_usd > 100.0
+          for: 5m
+          labels:
+            severity: warning
+            team: finance-finops
+          annotations:
+            summary: "Hourly LLM token spend exceeded $100.00 USD"
+            description: "Workspace {{ $labels.workspace }} hourly spend is ${{ $value }}."

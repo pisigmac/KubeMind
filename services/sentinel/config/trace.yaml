@@ -1,0 +1,35 @@
+storage:
+  local:
+    path: "./data/tracer.db"
+    retention_days: 90
+  cloud_sync:
+    enabled: false
+    provider: s3
+    bucket: "${S3_BUCKET}"
+    prefix: "kubemind-traces/"
+    sync_interval_hours: 24
+
+retention:
+  max_spans_per_workspace: 100000
+  auto_prune: true
+
+streaming:
+  websocket_enabled: true
+  max_connections: 100
+  heartbeat_interval_seconds: 30
+
+aggregation:
+  enabled: true
+  interval_minutes: 5
+
+# Phase 3 — security & observability (env overrides also supported)
+redaction:
+  enabled: true
+  modes: [email, phone, aws_key, bearer, private_key, api_key]
+
+guardrails:
+  injection_scoring: true
+
+otel:
+  # Set OTEL_EXPORTER_OTLP_ENDPOINT to enable (e.g. http://otel-collector:4318)
+  enabled_via_env: OTEL_EXPORTER_OTLP_ENDPOINT

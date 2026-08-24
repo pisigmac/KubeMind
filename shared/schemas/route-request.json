@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/route-request.json",
+  "title": "RouteRequest",
+  "description": "POST /v1/route body (router) — planned Phase 1",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "router",
+  "x-kubemind-phase": 1,
+  "type": "object",
+  "required": ["prompt"],
+  "properties": {
+    "prompt": { "type": "string" },
+    "preferred_target": { "type": ["string", "null"] },
+    "fallback": { "type": ["string", "null"] },
+    "enable_cache": { "type": "boolean", "default": true },
+    "max_latency_ms": { "type": ["integer", "null"] },
+    "model": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

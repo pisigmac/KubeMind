@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kubemind-auth"
+version = "0.3.3"
+description = "Workspace-bound API key authentication and RBAC shared by every KubeMind service"
+requires-python = ">=3.10"
+dependencies = [
+    "PyJWT[crypto]>=2.8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kubemind_auth*"]

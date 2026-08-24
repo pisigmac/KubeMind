@@ -1,0 +1,13 @@
+apiVersion: v2
+name: kubemind
+description: KubeMind — intent-aware LLM routing with enforced governance
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
+keywords:
+  - llm
+  - gateway
+  - governance
+  - kubernetes
+maintainers:
+  - name: KubeMind

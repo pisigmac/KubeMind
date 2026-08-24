@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tricore-config
+  namespace: tricore
+data:
+  DATABASE_URL: "postgresql://tricore:tricore@postgres:5432/tricore"
+  REDIS_URL: "redis://redis:6379/0"
+  SWITCHBOARD_URL: "http://switchboard:8080"
+  CONTEXTWEAVE_URL: "http://contextweave:8081"
+  DEEPAGENTS_URL: "http://deepagents:8082"
+  TRACER_URL: "http://beacon-trace:8083"
+  OLLAMA_BASE_URL: "http://ollama:11434"
+  NEXTAUTH_URL: "http://tricore.local"

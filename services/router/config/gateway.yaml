@@ -1,0 +1,324 @@
+# Deployment-level credential ownership. Override only at process startup with
+# KUBEMIND_CREDENTIAL_MODE. Requests can never switch this mode.
+credential_mode: keymint
+
+providers:
+  ollama:
+    base_url: "${OLLAMA_BASE_URL}"
+    models: ["llama3.1", "mistral", "nomic-embed-text", "deepseek-r1"]
+    priority: 1
+    quality_rank: 5
+    free: true
+    timeout_seconds: 60
+    local: true
+  vllm:
+    base_url: "${VLLM_BASE_URL}"
+    models: ["meta-llama/Meta-Llama-3-8B-Instruct", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"]
+    priority: 2
+    quality_rank: 4
+    free: true
+    local: true
+    timeout_seconds: 60
+  deepseek_local:
+    base_url: "${DEEPSEEK_LOCAL_BASE_URL}"
+    models: ["deepseek-r1", "deepseek-r1:7b", "deepseek-r1:14b"]
+    priority: 2
+    quality_rank: 4
+    free: true
+    local: true
+    timeout_seconds: 120
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    models: ["llama-3.1-70b", "mixtral-8x7b", "llama-3.1-8b-instant"]
+    priority: 3
+    quality_rank: 3
+    free: true
+    rate_limit: 20
+    timeout_seconds: 30
+  google:
+    models: ["gemini-1.5-flash"]
+    priority: 4
+    quality_rank: 3
+    free: true
+    rate_limit: 60
+    timeout_seconds: 30
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    models: ["meta-llama/llama-3.1-70b"]
+    priority: 5
+    quality_rank: 3
+    free: true
+    rate_limit: 20
+    timeout_seconds: 30
+  openai:
+    base_url: "https://api.openai.com/v1"
+    models: ["gpt-4o-mini", "gpt-4o"]
+    priority: 6
+    quality_rank: 1
+    free: false
+    rate_limit: 100
+    timeout_seconds: 30
+  anthropic:
+    base_url: "${ANTHROPIC_BASE_URL}"
+    models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
+    priority: 6
+    quality_rank: 1
+    free: false
+    rate_limit: 50
+    timeout_seconds: 60
+    # Uses OpenAI-compatible proxy if ANTHROPIC_BASE_URL points at a compat gateway;
+    # otherwise set base_url to a LiteLLM/proxy endpoint that speaks /v1/chat/completions.
+
+# ── Authentication ───────────────────────────────────────────────
+# Keys bind a caller to a workspace. With no keys configured the router runs in
+# fail-closed mode and refuses requests until keys are configured. A developer
+# may opt into open mode only in an explicitly local override file.
+auth:
+  required: true
+  keys: {}
+  #  "${KUBEMIND_KEY_ACME}": acme
+
+cache:
+  backend: redis
+  ttl_seconds: 300
+  exact_match: true
+  max_size_mb: 100
+  semantic:
+    enabled: true
+    embedding_model: nomic-embed-text
+    # nomic-embed-text is trained with task prefixes and is measurably worse
+    # without one. A single vector serves both the symmetric cache lookup and
+    # classification, so one prefix is a knowing compromise made to avoid
+    # embedding twice on every request.
+    #
+    # The invariant is consistency, not the exact value: the same prefix must
+    # reach intent examples at index time, prompts at query time, and cache
+    # entries on both store and lookup. Changing it rolls the cache namespace
+    # automatically, because vectors from different prefixes are not
+    # comparable and must never share a key.
+    embedding_prefix: "search_query: "
+    distance_threshold: 0.05
+    max_entries_per_workspace: 10000
+    scan_limit: 2000
+    # Partitioning by intent shrinks each scan and stops a `code` prompt
+    # matching a `general` one. A misclassification costs a miss, not a wrong
+    # answer, and low-confidence requests read the shared bucket as well.
+    partition_by_intent: true
+    # redis (default): in-process cosine over a Redis list. Fine for laptop
+    # scale. pgvector: nearest-neighbour in Postgres -- set
+    # KUBEMIND_SEMANTIC_CACHE_BACKEND=pgvector or backend: pgvector here.
+    # backend: redis
+    # embedding_dims: 768
+
+# ── Routing ──────────────────────────────────────────────────────
+routing:
+  intent_enabled: true
+  default_profile: general
+
+  # Abstentions, near-threshold predictions and provider fallbacks are the
+  # examples a labelled set is short of, and production produces them for
+  # free. Review them at /v1/intents/review, then export the confirmed labels
+  # straight into eval/dataset.jsonl.
+  feedback:
+    enabled: true
+    # Above this the classifier was sure and the case is not worth reviewing.
+    low_confidence_threshold: 0.55
+    max_prompt_chars: 400
+    max_cases: 2000
+    ttl_seconds: 2592000
+    # Prompts that trip a detector are dropped rather than redacted. A review
+    # queue is a second copy of user traffic, and a redacted secret is still
+    # evidence a secret was sent.
+    skip_sensitive: true
+
+  # Optional cascade: try a cheap local target first, escalate when confidence
+  # or answer quality is low. Off by default until the eval set shows it helps.
+  # Never escalates past a local_only policy verdict.
+  cascade:
+    enabled: false
+    confidence_below: 0.55
+    min_answer_chars: 40
+    prefer_local_first: true
+
+  classifier:
+    enabled: true
+    # Optional path to a trained logistic head. Written only by
+    # `python eval/train_linear_head.py` when it beats k-NN on the harness.
+    # linear_head_path: models/linear_head.json
+    # Mean of the top-k example similarities within each intent. Scoring per
+    # intent rather than globally stops intents with many examples crowding out
+    # intents with few.
+    knn_k: 3
+    # Confidence is the top-1 minus top-2 margin. Absolute similarity is a poor
+    # signal because embedding spaces are anisotropic.
+    #
+    # 0.04 comes from `make eval-sweep` against eval/dataset.jsonl with
+    # nomic-embed-text: it holds accuracy at 0.870 while dropping weighted
+    # error from 4.9 to 3.5 versus 0.02. It trades three extra abstentions
+    # (weight 0.3) for two fewer misroutes (weight 1.0). Re-run the sweep if
+    # the embedding model changes -- these numbers are model-specific.
+    margin_threshold: 0.04
+    min_similarity: 0.45
+    temperature: 0.05
+    rule_prior_weight: 0.06
+    history_decay: 0.35
+
+  # Profiles say what a request should become, not just where it goes.
+  profiles:
+    general:
+      pool: [ollama, groq, google]
+      cache:
+        enabled: true
+        distance_threshold: 0.05
+
+    code:
+      pool: [deepseek_local, ollama, groq]
+      temperature: 0.2
+      system_prompt: >-
+        You are a precise software engineer. Prefer correct, runnable code and
+        state assumptions explicitly.
+      cache:
+        enabled: true
+        # Code answers are brittle to small prompt differences, so require a
+        # closer match than general chat.
+        distance_threshold: 0.02
+
+    knowledge:
+      pool: [ollama, groq]
+      retrieval: true
+      retrieval_top_k: 4
+      temperature: 0.1
+      cache:
+        enabled: true
+        distance_threshold: 0.03
+
+    security_local:
+      # Security questions tend to carry sensitive detail. Keeping them on
+      # local providers is a routing preference; the policy engine is what
+      # actually enforces egress, independently of this classifier.
+      pool: [ollama, vllm, deepseek_local]
+      temperature: 0.1
+      cache:
+        enabled: false
+
+    fast_local:
+      pool: [ollama, vllm]
+      temperature: 0.0
+      max_tokens: 1024
+      system_prompt: >-
+        Summarise operational log data. Be terse and factual. Lead with the
+        most likely root cause.
+      cache:
+        enabled: true
+        distance_threshold: 0.08
+
+  # Intents are declarative: examples build the k-NN index at startup, and each
+  # maps to a profile. Add an intent by adding examples, not by writing code.
+  intents:
+    code:
+      profile: code
+      examples:
+        - "Write a Python function that parses a YAML config file"
+        - "Refactor this class to use dependency injection"
+        - "Why does this TypeScript code throw a type error?"
+        - "Implement a binary search in Go"
+        - "Add unit tests for the retry helper"
+        - "Explain what this regex does and rewrite it more readably"
+        - "Fix the off-by-one bug in this loop"
+        - "Convert this callback code to async await"
+
+    rag:
+      profile: knowledge
+      examples:
+        - "What does our onboarding handbook say about expenses?"
+        - "According to the runbook, how do we roll back a release?"
+        - "Look up our data retention policy"
+        - "Search the knowledge base for the incident response process"
+        - "What is our SOC2 evidence collection procedure?"
+        - "Find the section of the design doc about rate limiting"
+        - "Per our internal wiki, who owns the billing service?"
+
+    security:
+      profile: security_local
+      examples:
+        - "Review this authentication flow for vulnerabilities"
+        - "Is CVE-2024-3094 relevant to our dependency tree?"
+        - "Threat model this file upload endpoint"
+        - "What are the risks of allowing this RBAC binding?"
+        - "Check this nginx config for security hardening gaps"
+        - "How should we rotate these service credentials?"
+
+    log:
+      profile: fast_local
+      examples:
+        - "Why is this pod in CrashLoopBackOff?"
+        - "Summarize these error logs and find the root cause"
+        - "What caused the spike in 500s at 14:20?"
+        - "This container was OOMKilled, what should I change?"
+        - "Parse this stack trace and tell me what failed"
+        - "Explain these kubelet log lines"
+
+    # Decoy class. Out-of-distribution prompts land here and are treated as
+    # `general`, which stops them being forced into the nearest real intent.
+    _background:
+      examples:
+        - "What is the weather like today?"
+        - "Write a haiku about the ocean"
+        - "Who won the world cup in 1998?"
+        - "Translate good morning into Japanese"
+        - "Give me a recipe for banana bread"
+        - "What is the capital of Australia?"
+        - "Tell me a joke"
+        - "Summarize the plot of Hamlet"
+
+  # Legacy single-provider mapping. Still honoured when an intent has no
+  # profile, so existing configs keep routing.
+  prefer_targets: {}
+
+  # Map preferred_target strings (from /v1/route) to provider names
+  target_aliases:
+    deepseek-r1-local: deepseek_local
+    deepseek-r1: deepseek_local
+    vllm-cluster: vllm
+    vllm-local: vllm
+    ollama: ollama
+    local: ollama
+
+# ── Sensitivity policy ───────────────────────────────────────────
+# Evaluated inline, before dispatch, independently of the intent classifier.
+# Most restrictive matching rule wins.
+policy:
+  enabled: true
+  # If the engine cannot reach a verdict, refuse rather than pass through.
+  fail_closed: true
+  default:
+    rules:
+      - detector: private_key
+        action: block
+      - detector: aws_key
+        action: block
+      - detector: api_key
+        action: block
+      - detector: bearer
+        action: redact
+      - detector: injection
+        threshold: 0.6
+        action: block
+      # The differentiating rule: personal data may still be answered, but not
+      # by a provider outside the cluster.
+      - detector: any_pii
+        action: local_only
+  workspaces: {}
+
+rate_limiting:
+  default_requests_per_minute: 60
+  default_tokens_per_minute: 10000
+
+circuit_breaker:
+  failure_threshold: 5
+  recovery_timeout_seconds: 30
+  half_open_max_requests: 3
+
+usage_tracking:
+  enabled: true
+  flush_interval_seconds: 60

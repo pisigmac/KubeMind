@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="retro-synthwave" data-font="syne">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tricore — Multi-Color Matrix Palette Customizer</title>
+
+  <!-- Google Fonts Imports -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800;900&family=Outfit:wght@600;800;900&family=Plus+Jakarta+Sans:wght@700;800&family=Cabinet+Grotesk:wght@800;900&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ── 6 Vibrant Multi-Color Themes ────────────────────── */
+
+    /* Theme 1: Retro Synthwave & Cyberpunk Neon (Hot Pink, Cyan, Electric Purple, Acid Yellow) */
+    [data-theme="retro-synthwave"] {
+      --bg-body: #0A0518;
+      --bg-card: #150A2E;
+      --border-color: #3B1578;
+      --text-main: #FFFFFF;
+      --text-muted: #D8B4FE;
+      --c-router: #FF2E93;    /* Hot Pink */
+      --c-mind: #00F0FF;      /* Cyan */
+      --c-agents: #FFE600;    /* Acid Yellow */
+      --c-sentinel: #A855F7;  /* Electric Purple */
+      --hero-gradient: linear-gradient(135deg, #FF2E93 0%, #00F0FF 50%, #FFE600 100%);
+      --btn-bg: linear-gradient(90deg, #FF2E93, #00F0FF);
+      --btn-text: #0A0518;
+    }
+
+    /* Theme 2: Neo-Brutalist Pop (Electric Lime, Cobalt Blue, Coral Orange, Vivid Yellow) */
+    [data-theme="neobrutalist-pop"] {
+      --bg-body: #FDFBF7;
+      --bg-card: #FFFFFF;
+      --border-color: #000000;
+      --text-main: #000000;
+      --text-muted: #374151;
+      --c-router: #2563EB;    /* Cobalt Blue */
+      --c-mind: #10B981;      /* Emerald Green */
+      --c-agents: #F59E0B;    /* Vivid Yellow/Amber */
+      --c-sentinel: #EC4899;  /* Coral Pink */
+      --hero-gradient: linear-gradient(135deg, #2563EB, #10B981, #F59E0B);
+      --btn-bg: #CCFF00;      /* Electric Lime */
+      --btn-text: #000000;
+    }
+
+    /* Theme 3: Midnight Aurora (Emerald Green, Aqua Cyan, Violet, Golden Amber) */
+    [data-theme="midnight-aurora"] {
+      --bg-body: #05131A;
+      --bg-card: #0A222E;
+      --border-color: #163B4E;
+      --text-main: #F0FDF4;
+      --text-muted: #94A3B8;
+      --c-router: #10B981;    /* Emerald Green */
+      --c-mind: #06B6D4;      /* Aqua Cyan */
+      --c-agents: #8B5CF6;    /* Violet */
+      --c-sentinel: #F59E0B;  /* Golden Amber */
+      --hero-gradient: linear-gradient(135deg, #10B981, #06B6D4, #8B5CF6);
+      --btn-bg: #10B981;
+      --btn-text: #05131A;
+    }
+
+    /* Theme 4: Solar Sunset (Crimson Red, Sunset Orange, Gold, Warm Purple) */
+    [data-theme="solar-sunset"] {
+      --bg-body: #190910;
+      --bg-card: #2B111D;
+      --border-color: #4A1D33;
+      --text-main: #FFF1F2;
+      --text-muted: #FDA4AF;
+      --c-router: #EF4444;    /* Crimson Red */
+      --c-mind: #F97316;      /* Sunset Orange */
+      --c-agents: #EAB308;    /* Gold */
+      --c-sentinel: #D946EF;  /* Warm Fuchsia */
+      --hero-gradient: linear-gradient(135deg, #EF4444, #F97316, #EAB308);
+      --btn-bg: linear-gradient(90deg, #F97316, #EF4444);
+      --btn-text: #FFFFFF;
+    }
+
+    /* Theme 5: Deep Space Multi-Spectrum (Teal, Indigo, Rose, Amber) */
+    [data-theme="deep-spectrum"] {
+      --bg-body: #070B14;
+      --bg-card: #0F172A;
+      --border-color: #1E293B;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --c-router: #14B8A6;    /* Teal */
+      --c-mind: #6366F1;      /* Indigo */
+      --c-agents: #F43F5E;    /* Rose */
+      --c-sentinel: #F59E0B;  /* Amber */
+      --hero-gradient: linear-gradient(135deg, #14B8A6, #6366F1, #F43F5E);
+      --btn-bg: #6366F1;
+      --btn-text: #FFFFFF;
+    }
+
+    /* Font Variations */
+    [data-font="syne"] { --font-heading: 'Syne', sans-serif; }
+    [data-font="outfit"] { --font-heading: 'Outfit', sans-serif; }
+    [data-font="jakarta"] { --font-heading: 'Plus Jakarta Sans', sans-serif; }
+    [data-font="cabinet"] { --font-heading: 'Cabinet Grotesk', sans-serif; }
+    [data-font="mono"] { --font-heading: 'Space Mono', monospace; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-heading);
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      transition: all 0.3s ease;
+    }
+
+    /* Floating Customizer Toolbar */
+    .control-panel {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      padding: 12px 20px;
+      border-radius: 16px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .control-group label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 800;
+    }
+
+    .control-group select {
+      background: var(--bg-body);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 80px 24px 140px;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    h1.hero-title {
+      font-size: 64px;
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+    }
+
+    .gradient-text {
+      background: var(--hero-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.lead {
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 36px;
+    }
+
+    .cta-button {
+      background: var(--btn-bg);
+      color: var(--btn-text);
+      font-size: 15px;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 16px 36px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    }
+
+    /* Vibrant Multi-Color Grid Cards */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 2px solid var(--border-color);
+      border-radius: 16px;
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card.router { border-top: 4px solid var(--c-router); }
+    .card.mind { border-top: 4px solid var(--c-mind); }
+    .card.agents { border-top: 4px solid var(--c-agents); }
+    .card.sentinel { border-top: 4px solid var(--c-sentinel); }
+
+    .card-badge {
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 16px;
+    }
+
+    .card.router .card-badge { background: var(--c-router); color: #000; }
+    .card.mind .card-badge { background: var(--c-mind); color: #000; }
+    .card.agents .card-badge { background: var(--c-agents); color: #000; }
+    .card.sentinel .card-badge { background: var(--c-sentinel); color: #000; }
+
+    .card-title {
+      font-size: 24px;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+
+    .card-text {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating Customizer Panel -->
+  <div class="control-panel">
+    <div class="control-group">
+      <label for="themeSelect">Vibrant Multi-Color Schemes</label>
+      <select id="themeSelect" onchange="changeTheme(this.value)">
+        <option value="retro-synthwave">1. Cyber Synthwave (Pink, Cyan, Yellow, Purple)</option>
+        <option value="neobrutalist-pop">2. Neo-Brutalist Pop (Lime, Blue, Orange, Pink)</option>
+        <option value="midnight-aurora">3. Midnight Aurora (Emerald, Cyan, Violet, Amber)</option>
+        <option value="solar-sunset">4. Solar Sunset (Crimson, Orange, Gold, Fuchsia)</option>
+        <option value="deep-spectrum">5. Deep Spectrum (Teal, Indigo, Rose, Amber)</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="fontSelect">Typography</label>
+      <select id="fontSelect" onchange="changeFont(this.value)">
+        <option value="syne">Syne (Ultra-Wide Geometric)</option>
+        <option value="outfit">Outfit (Modern Bold)</option>
+        <option value="jakarta">Plus Jakarta Sans (Corporate Tech)</option>
+        <option value="cabinet">Cabinet Grotesk (High-Fashion)</option>
+        <option value="mono">Space Mono (Architectural Code)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="container">
+    <section class="hero">
+      <h1 class="hero-title">
+        The Multi-Engine <br />
+        <span class="gradient-text">AI Operating Core</span>
+      </h1>
+
+      <p class="lead">
+        A multi-color, microservice architecture unifying LLM routing, hybrid graph memory, autonomous tool execution, and real-time telemetry.
+      </p>
+
+      <button class="cta-button">Launch Multi-Color Console</button>
+    </section>
+
+    <div class="grid">
+      <div class="card router">
+        <div class="card-badge">ENGINE 01 — GATEWAY</div>
+        <div class="card-title">ROUTER</div>
+        <div class="card-text">Multi-provider model load balancing and Redis response caching for &lt;10ms deduplicated prompts.</div>
+      </div>
+
+      <div class="card mind">
+        <div class="card-badge">ENGINE 02 — KNOWLEDGE</div>
+        <div class="card-title">MIND</div>
+        <div class="card-text">Hybrid vector similarity + BM25 keyword search stored in PostgreSQL for hyper-accurate RAG.</div>
+      </div>
+
+      <div class="card agents">
+        <div class="card-badge">ENGINE 03 — EXECUTION</div>
+        <div class="card-title">AGENTS</div>
+        <div class="card-text">Autonomous planner armed with sandboxed filesystem, shell, and code analyzer tools.</div>
+      </div>
+
+      <div class="card sentinel">
+        <div class="card-badge">ENGINE 04 — TRACING</div>
+        <div class="card-title">SENTINEL</div>
+        <div class="card-text">Distributed span collector with live WebSocket telemetry event streaming.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function changeTheme(themeName) {
+      document.documentElement.setAttribute('data-theme', themeName);
+    }
+    function changeFont(fontName) {
+      document.documentElement.setAttribute('data-font', fontName);
+    }
+  </script>
+</body>
+</html>

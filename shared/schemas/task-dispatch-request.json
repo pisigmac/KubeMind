@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/task-dispatch-request.json",
+  "title": "TaskDispatchRequest",
+  "description": "POST /v1/task/dispatch body (agents) — planned Phase 4",
+  "x-kubemind-status": "planned",
+  "x-kubemind-service": "agents",
+  "x-kubemind-phase": 4,
+  "type": "object",
+  "required": ["prompt"],
+  "properties": {
+    "prompt": { "type": "string" },
+    "human_in_the_loop": { "type": "boolean", "default": false },
+    "namespace": {
+      "type": ["string", "null"],
+      "description": "Kubernetes namespace for K8s tools"
+    },
+    "model": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

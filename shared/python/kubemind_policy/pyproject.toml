@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kubemind-policy"
+version = "0.3.3"
+description = "Inline policy engine: NER, DLP, PII pseudonymization and guardrails for KubeMind"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.18.0", "numpy>=1.26.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kubemind_policy*"]

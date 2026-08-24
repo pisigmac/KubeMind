@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kubemind.ai/schemas/span-ingest.json",
+  "title": "SpanIngest",
+  "description": "POST /v1/spans body (sentinel)",
+  "x-kubemind-status": "implemented",
+  "x-kubemind-service": "sentinel",
+  "type": "object",
+  "required": ["trace_id", "span_id", "service", "operation", "start_time"],
+  "properties": {
+    "trace_id": { "type": "string" },
+    "span_id": { "type": "string" },
+    "parent_id": { "type": ["string", "null"] },
+    "workspace_id": { "type": "string", "default": "default" },
+    "service": {
+      "type": "string",
+      "description": "router | mind | agents | sentinel"
+    },
+    "operation": { "type": "string" },
+    "start_time": { "type": "string", "description": "ISO 8601" },
+    "end_time": { "type": ["string", "null"] },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "error", "warning"],
+      "default": "ok"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

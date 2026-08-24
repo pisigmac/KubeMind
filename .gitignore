@@ -1,0 +1,117 @@
+# Python
+__pycache__/
+**/__pycache__/
+tests/**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.whl
+*.tar.gz
+*.egg-info/
+.installed.cfg
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+venv/
+.venv/
+
+# Go
+# Rooted: dashboard/ and landing*/ have their own bin/ and lib/ source dirs
+# that a bare `bin/` or `lib/` pattern would silently swallow.
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+vendor/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data volumes (local dev)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Eval embedding cache: regenerable, and large
+services/router/eval/.embeddings.json
+
+# Marketing/front-end experiments. Separate projects, four of which carry their
+# own git history and would commit as broken gitlinks.
+# landing is the current intent-routing marketing site and is tracked.
+/landing_[0-9]*/
+/landing/.next/
+/landing/node_modules/
+
+# Agent tool skill packs. Nineteen byte-identical copies of the same vendor
+# pack (~2,700 files), machine-generated and not project source. Kept on disk
+# so each tool finds its own path, kept out of history so diffs stay readable.
+.agents/
+.augment/
+.claude/
+.codebuddy/
+.codewhale/
+.codex/
+.continue/
+.cursor/
+.factory/
+.gemini/
+.github/**
+!.github/workflows/
+!.github/workflows/kubemind-ci.yml
+.kilocode/
+.kiro/
+.opencode/
+.qoder/
+.roo/
+.session
+.trae/
+.warp/
+.windsurf/
+
+# Quality Audit reports & logs (local only)
+quality*.md
+QUALITY*.md
+logs/
+docs/superpowers/
+
+# Internal / marketing docs — local only, not for public repo
+docs/KUBEMIND_IMPLEMENTATION_PLAN.md
+docs/CI_BASELINE.md
+docs/migration/
+docs/design/
+
+# Landing page (marketing site — tracked separately, large node_modules)
+landing/

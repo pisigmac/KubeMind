@@ -1,0 +1,169 @@
+version: "3.9"
+
+services:
+  postgres:
+    # pgvector-enabled Postgres for mind hybrid search (HNSW)
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: tricore
+      POSTGRES_PASSWORD: tricore
+      POSTGRES_DB: tricore
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "9432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tricore"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "9379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "9434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  router:
+    build:
+      # Repo root so the shared policy package is inside the build context.
+      context: .
+      dockerfile: services/router/Dockerfile
+    ports:
+      - "9080:8080"
+    environment:
+      - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - SENTINEL_URL=http://sentinel:8083
+      - MIND_URL=http://mind:8081
+      # Bind API keys to workspaces: "key:workspace,key2:workspace2".
+      # Left empty the router trusts X-Workspace-ID, which is fine locally
+      # and not fine on a shared network.
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_ADMIN_KEY=${KUBEMIND_ADMIN_KEY:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
+      - KUBEMIND_DEPLOYMENT=${KUBEMIND_DEPLOYMENT:-local}
+      - KUBEMIND_CREDENTIAL_MODE=${KUBEMIND_CREDENTIAL_MODE:-direct}
+      # redis (default) or pgvector. Postgres image already includes pgvector.
+      - KUBEMIND_SEMANTIC_CACHE_BACKEND=${KUBEMIND_SEMANTIC_CACHE_BACKEND:-redis}
+      # Optional local inference targets (OpenAI-compatible):
+      # - VLLM_BASE_URL=http://vllm:8000/v1
+      # - DEEPSEEK_LOCAL_BASE_URL=http://ollama:11434
+      # Direct mode uses deployment-secret provider keys. Production defaults
+      # to keymint mode and never injects provider credentials into KubeMind.
+      # - ANTHROPIC_BASE_URL=https://api.anthropic.com/v1  # or LiteLLM proxy
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      mind:
+        condition: service_started
+
+  mind:
+    build:
+      context: .
+      dockerfile: services/mind/Dockerfile
+    ports:
+      - "9081:8081"
+    environment:
+      - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+
+  agents:
+    build:
+      context: .
+      dockerfile: services/agents/Dockerfile
+    ports:
+      - "9082:8082"
+    environment:
+      - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      - ROUTER_URL=http://router:8080
+      - MIND_URL=http://mind:8081
+      - SENTINEL_URL=http://sentinel:8083
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
+    env_file:
+      - .env
+    depends_on:
+      - router
+      - mind
+      - sentinel
+
+  sentinel:
+    build:
+      context: .
+      dockerfile: services/sentinel/Dockerfile
+    ports:
+      - "9083:8083"
+    environment:
+      - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      # Hash-chained audit ledger (falls back to SQLite if unset).
+      - AUDIT_LEDGER_URL=postgresql://tricore:tricore@postgres:5432/tricore
+      - KUBEMIND_API_KEYS=${KUBEMIND_API_KEYS:-}
+      - KUBEMIND_SERVICE_KEY=${KUBEMIND_SERVICE_KEY:-}
+      - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
+    volumes:
+      - sentinel_data:/app/data
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "9000:3000"
+    environment:
+      - NEXTAUTH_URL=http://localhost:9000
+      - ROUTER_URL=http://router:8080
+      - MIND_URL=http://mind:8081
+      - AGENTS_URL=http://agents:8082
+      - SENTINEL_URL=http://sentinel:8083
+    env_file:
+      - .env
+    depends_on:
+      - router
+      - mind
+      - agents
+      - sentinel
+
+volumes:
+  postgres_data:
+  ollama_data:
+  sentinel_data:

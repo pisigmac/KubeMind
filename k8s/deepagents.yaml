@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deepagents
+  namespace: tricore
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: deepagents
+  template:
+    metadata:
+      labels:
+        app: deepagents
+    spec:
+      containers:
+        - name: deepagents
+          image: pisigmac/tricore-deepagents:latest
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: tricore-config
+            - secretRef:
+                name: tricore-secrets
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deepagents
+  namespace: tricore
+spec:
+  selector:
+    app: deepagents
+  ports:
+    - port: 8082
+      targetPort: 8082

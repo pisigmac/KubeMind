@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kubemind.name" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kubemind.labels" . | nindent 4 }}
+data:
+  KUBEMIND_CORS_ORIGINS: {{ .Values.auth.corsOrigins | quote }}
+  KUBEMIND_AUTH_REQUIRED: {{ .Values.auth.required | quote }}
+  KUBEMIND_SEMANTIC_CACHE_BACKEND: {{ .Values.semanticCacheBackend | quote }}
+  KUBEMIND_CREDENTIAL_MODE: {{ .Values.credentialMode | quote }}
+  KUBEMIND_DEPLOYMENT: {{ .Values.deployment | default "production" | quote }}
+  ROUTER_URL: http://{{ include "kubemind.name" . }}-router:8080
+  MIND_URL: http://{{ include "kubemind.name" . }}-mind:8081
+  AGENTS_URL: http://{{ include "kubemind.name" . }}-agents:8082
+  SENTINEL_URL: http://{{ include "kubemind.name" . }}-sentinel:8083
