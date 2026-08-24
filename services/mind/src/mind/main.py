@@ -98,6 +98,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+from fastapi.responses import JSONResponse
+@app.exception_handler(AuthError)
+async def auth_error_handler(request: Request, exc: AuthError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
@@ -174,6 +180,7 @@ async def health():
 async def ingest(
     req: IngestRequest, request: Request, workspace_id: str = Depends(get_workspace)
 ):
+    (await get_auth(request)).assert_scope("mind:ingest")
     if not connectors or not store or not embedder:
         raise HTTPException(status_code=503, detail="Knowledge services not initialized")
 
@@ -240,6 +247,7 @@ async def ingest(
 async def get_node(
     node_id: str, request: Request, workspace_id: str = Depends(get_workspace)
 ):
+    (await get_auth(request)).assert_scope("mind:query")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -264,6 +272,7 @@ async def get_node(
 async def query(
     req: QueryRequest, request: Request, workspace_id: str = Depends(get_workspace)
 ):
+    (await get_auth(request)).assert_scope("mind:query")
     return await _run_query(req, workspace_id)
 
 
@@ -271,6 +280,7 @@ async def query(
 async def memory_query(
     req: QueryRequest, request: Request, workspace_id: str = Depends(get_workspace)
 ):
+    (await get_auth(request)).assert_scope("mind:query")
     """Landing/SDK alias for hybrid knowledge query."""
     return await _run_query(req, workspace_id)
 
@@ -279,6 +289,7 @@ async def memory_query(
 async def create_link(
     req: LinkRequest, request: Request, workspace_id: str = Depends(get_workspace)
 ):
+    (await get_auth(request)).assert_scope("mind:ingest")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -290,6 +301,7 @@ async def create_link(
 
 @app.get("/v1/graph")
 async def export_graph(request: Request, workspace_id: str = Depends(get_workspace)):
+    (await get_auth(request)).assert_scope("mind:query")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 

@@ -111,6 +111,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+from fastapi.responses import JSONResponse
+@app.exception_handler(AuthError)
+async def auth_error_handler(request: Request, exc: AuthError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
@@ -165,6 +171,7 @@ async def health():
 # ── Span Ingestion ─────────────────────────────────────────────
 @app.post("/v1/spans")
 async def ingest_span(req: SpanIngest, request: Request, auth=Depends(get_auth)):
+    auth.assert_scope("audit:write")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -232,6 +239,7 @@ async def verify_audit_chain(
     A 200 with `valid: false` is the interesting answer: the chain is intact
     enough to read, and something in it has been changed.
     """
+    auth.assert_scope("audit:verify")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     return ledger.verify(_scope(auth, workspace_id), limit=limit)
@@ -245,6 +253,7 @@ async def audit_head(workspace_id: str = None, auth=Depends(get_auth)):
     Recording this value somewhere the database cannot reach is what closes
     that gap.
     """
+    auth.assert_scope("audit:read")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     return ledger.head(_scope(auth, workspace_id))
@@ -258,6 +267,7 @@ async def audit_entries_list(
     entry_type: str = None,
     auth=Depends(get_auth),
 ):
+    auth.assert_scope("audit:read")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     ws = _scope(auth, workspace_id)
@@ -269,6 +279,7 @@ async def audit_entries_list(
 
 @app.get("/v1/audit/retention")
 async def get_retention(workspace_id: str = None, auth=Depends(get_auth)):
+    auth.assert_scope("audit:read")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     return ledger.get_retention(_scope(auth, workspace_id))
@@ -277,6 +288,7 @@ async def get_retention(workspace_id: str = None, auth=Depends(get_auth)):
 @app.post("/v1/audit/retention")
 async def set_retention(req: RetentionRequest, auth=Depends(get_auth)):
     """Set a workspace's retention window, or place it under legal hold."""
+    auth.assert_scope("audit:admin")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     return ledger.set_retention(
@@ -288,6 +300,7 @@ async def set_retention(req: RetentionRequest, auth=Depends(get_auth)):
 
 @app.get("/v1/audit/stats")
 async def audit_stats(auth=Depends(get_auth)):
+    auth.assert_scope("audit:read")
     if not ledger:
         raise HTTPException(status_code=503, detail="Audit ledger not initialized")
     return ledger.stats()
@@ -295,6 +308,7 @@ async def audit_stats(auth=Depends(get_auth)):
 # ── Span Query ──────────────────────────────────────────────────
 @app.post("/v1/spans/query")
 async def query_spans(req: SpanQuery, request: Request, auth=Depends(get_auth)):
+    auth.assert_scope("audit:read")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -326,6 +340,7 @@ async def get_spans(
     offset: int = 0,
     auth=Depends(get_auth),
 ):
+    auth.assert_scope("audit:read")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -352,6 +367,7 @@ async def get_metrics(
     hours: int = 24,
     auth=Depends(get_auth),
 ):
+    auth.assert_scope("metrics:read")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -364,6 +380,7 @@ async def export_traces(
     hours: int = None,
     auth=Depends(get_auth),
 ):
+    auth.assert_scope("audit:read")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -398,6 +415,7 @@ async def telemetry_traces(
     auth=Depends(get_auth),
 ):
     """Alias of GET /v1/spans for landing/SDK compatibility."""
+    auth.assert_scope("audit:read")
     return await get_spans(
         workspace_id=workspace_id,
         service=service,
@@ -420,6 +438,7 @@ async def prometheus_metrics():
 # ── Stats ──────────────────────────────────────────────────────
 @app.get("/v1/stats")
 async def get_stats(auth=Depends(get_auth)):
+    auth.assert_scope("metrics:read")
     if not store:
         raise HTTPException(status_code=503, detail="Store not initialized")
 
@@ -447,6 +466,7 @@ async def websocket_stream(websocket: WebSocket):
             or websocket.query_params.get("api_key"),
             websocket.headers.get(WORKSPACE_HEADER),
         )
+        ws_auth.assert_scope("audit:read")
     except AuthError:
         await websocket.close(code=1008)
         return

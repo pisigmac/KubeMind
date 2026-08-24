@@ -41,6 +41,7 @@ ROLE_SCOPES: Dict[str, Set[str]] = {
         "mind:query",
         "mind:ingest",
         "audit:read",
+        "audit:write",
         "usage:read",
     },
     Role.AUDITOR.value: {

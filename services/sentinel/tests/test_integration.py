@@ -201,3 +201,33 @@ class TestAuthEnforcement:
             "/v1/audit/verify?workspace_id=globex", headers={"X-API-Key": "k-acme"}
         )
         assert resp.status_code == 403
+
+    def test_role_based_access_control(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TRACER_DB_PATH", str(tmp_path / "spans.db"))
+        monkeypatch.setenv("AUDIT_LEDGER_URL", f"sqlite:///{tmp_path}/ledger.db")
+        monkeypatch.setenv("KUBEMIND_API_KEYS", "k-admin:acme:admin,k-viewer:acme:viewer,k-auditor:acme:auditor,k-dev:acme:developer")
+
+        import importlib
+        from sentinel import main
+        importlib.reload(main)
+        
+        with TestClient(main.app) as c:
+            # viewer tries to read spans (audit:read required, viewer only has metrics:read, dashboard:read, usage:read)
+            assert c.get("/v1/spans?workspace_id=acme", headers={"X-API-Key": "k-viewer"}).status_code == 403
+            # viewer tries to read metrics (metrics:read required)
+            assert c.get("/v1/metrics?workspace_id=acme", headers={"X-API-Key": "k-viewer"}).status_code == 200
+            
+            # auditor tries to write spans (audit:write required, auditor has audit:read, audit:verify)
+            assert c.post("/v1/spans", json=_span(workspace="acme"), headers={"X-API-Key": "k-auditor"}).status_code == 403
+            # auditor tries to read spans
+            assert c.get("/v1/spans?workspace_id=acme", headers={"X-API-Key": "k-auditor"}).status_code == 200
+            
+            # dev tries to write spans
+            assert c.post("/v1/spans", json=_span(workspace="acme"), headers={"X-API-Key": "k-dev"}).status_code == 200
+            # dev tries to change retention (audit:admin required)
+            assert c.post("/v1/audit/retention", json={"workspace_id": "acme", "retention_days": 10}, headers={"X-API-Key": "k-dev"}).status_code == 403
+            
+            # admin tries to change retention
+            assert c.post("/v1/audit/retention", json={"workspace_id": "acme", "retention_days": 10}, headers={"X-API-Key": "k-admin"}).status_code == 200
+
+        importlib.reload(main)
