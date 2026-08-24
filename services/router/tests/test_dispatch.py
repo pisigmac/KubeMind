@@ -494,3 +494,92 @@ class TestAuth:
 
     def test_cache_clear_requires_admin(self, client):
         assert client.post("/v1/cache/clear").status_code == 403
+
+
+class TestRestoreResponseToolCalls:
+    """Verify pseudonymized tokens in tool_calls and function_call are restored."""
+
+    def test_restore_tokens_in_tool_call_arguments(self):
+        token_map = {"[KM_PERSON_1]": "Alice Smith", "[KM_EMAIL_1]": "alice@example.com"}
+        response = {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_abc",
+                                "type": "function",
+                                "function": {
+                                    "name": "lookup_user",
+                                    "arguments": '{"name": "[KM_PERSON_1]", "email": "[KM_EMAIL_1]"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ]
+        }
+        from router.main import _restore_response
+        result = _restore_response(response, token_map)
+        args = result["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        assert "[KM_PERSON_1]" not in args
+        assert "Alice Smith" in args
+        assert "alice@example.com" in args
+
+    def test_restore_tokens_in_legacy_function_call(self):
+        token_map = {"[KM_PERSON_1]": "Bob Jones"}
+        response = {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {
+                            "name": "greet",
+                            "arguments": '{"user": "[KM_PERSON_1]"}',
+                        },
+                    },
+                }
+            ]
+        }
+        from router.main import _restore_response
+        result = _restore_response(response, token_map)
+        args = result["choices"][0]["message"]["function_call"]["arguments"]
+        assert "Bob Jones" in args
+        assert "[KM_PERSON_1]" not in args
+
+    def test_restore_handles_multiple_tool_calls(self):
+        token_map = {"[KM_PERSON_1]": "Alice", "[KM_PERSON_2]": "Bob"}
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {"id": "c1", "type": "function", "function": {"name": "f1", "arguments": '{"x": "[KM_PERSON_1]"}'}},
+                            {"id": "c2", "type": "function", "function": {"name": "f2", "arguments": '{"y": "[KM_PERSON_2]"}'}},
+                        ],
+                    }
+                }
+            ]
+        }
+        from router.main import _restore_response
+        result = _restore_response(response, token_map)
+        assert "Alice" in result["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+        assert "Bob" in result["choices"][0]["message"]["tool_calls"][1]["function"]["arguments"]
+
+    def test_restore_no_regression_on_content(self):
+        token_map = {"[KM_PERSON_1]": "Alice"}
+        response = {
+            "choices": [{"message": {"role": "assistant", "content": "Hello [KM_PERSON_1]"}}]
+        }
+        from router.main import _restore_response
+        result = _restore_response(response, token_map)
+        assert result["choices"][0]["message"]["content"] == "Hello Alice"
+

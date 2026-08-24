@@ -872,7 +872,10 @@ def _redact_messages(
 
 
 def _restore_response(response: Any, token_map: Dict[str, str]) -> Any:
-    """Restore pseudonymized tokens in the LLM's generated response before returning to user."""
+    """Restore pseudonymized tokens in the LLM's generated response before returning to user.
+    
+    Walks message.content, text, tool_calls[].function.arguments, and function_call.arguments.
+    """
     if not token_map or not response:
         return response
     from kubemind_policy import restore_string
@@ -887,6 +890,24 @@ def _restore_response(response: Any, token_map: Dict[str, str]) -> Any:
                     msg = dict(c["message"])
                     if "content" in msg and isinstance(msg["content"], str):
                         msg["content"] = restore_string(msg["content"], token_map)
+                    # Restore tokens in tool_calls[].function.arguments
+                    if "tool_calls" in msg and isinstance(msg["tool_calls"], list):
+                        restored_calls = []
+                        for tc in msg["tool_calls"]:
+                            tc = dict(tc)
+                            if "function" in tc and isinstance(tc["function"], dict):
+                                fn = dict(tc["function"])
+                                if "arguments" in fn and isinstance(fn["arguments"], str):
+                                    fn["arguments"] = restore_string(fn["arguments"], token_map)
+                                tc["function"] = fn
+                            restored_calls.append(tc)
+                        msg["tool_calls"] = restored_calls
+                    # Restore tokens in legacy function_call.arguments
+                    if "function_call" in msg and isinstance(msg["function_call"], dict):
+                        fc = dict(msg["function_call"])
+                        if "arguments" in fc and isinstance(fc["arguments"], str):
+                            fc["arguments"] = restore_string(fc["arguments"], token_map)
+                        msg["function_call"] = fc
                     c["message"] = msg
                 if "text" in c and isinstance(c["text"], str):
                     c["text"] = restore_string(c["text"], token_map)
