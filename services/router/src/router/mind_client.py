@@ -83,11 +83,13 @@ class MindClient:
             self.client = None
 
     async def query(
-        self, query: str, workspace_id: str, top_k: int = 4
+        self, query: str, workspace_id: str, top_k: int = 4, correlation_id: Optional[str] = None
     ) -> Optional[List[Dict[str, Any]]]:
         if not self.enabled or not self.client or not query.strip():
             return None
         headers = {"X-Workspace-ID": workspace_id}
+        if correlation_id:
+            headers["X-Correlation-ID"] = correlation_id
         # The router retrieves for every tenant, so it authenticates as a
         # service and names the real caller in the header.
         service_key = os.environ.get("KUBEMIND_SERVICE_KEY")
@@ -109,11 +111,11 @@ class MindClient:
         return results if isinstance(results, list) else []
 
     async def retrieve(
-        self, query: str, workspace_id: str, top_k: int = 4
+        self, query: str, workspace_id: str, top_k: int = 4, correlation_id: Optional[str] = None
     ) -> RetrievalOutcome:
         if not self.enabled or not self.client or not query.strip():
             return RetrievalOutcome(STATUS_UNAVAILABLE)
-        hits = await self.query(query, workspace_id, top_k=top_k)
+        hits = await self.query(query, workspace_id, top_k=top_k, correlation_id=correlation_id)
         if hits is None:
             return RetrievalOutcome(STATUS_UNAVAILABLE)
         context = self.format_context(hits)

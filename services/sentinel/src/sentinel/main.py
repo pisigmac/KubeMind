@@ -122,8 +122,18 @@ app.add_middleware(
     allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER],
+    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER, "x-correlation-id"],
 )
+
+from kubemind_tracing import extract_correlation_id
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    correlation_id = extract_correlation_id(request.headers)
+    request.state.correlation_id = correlation_id
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
 
 authenticator = Authenticator.from_config()
 authenticator.assert_production_safe("sentinel")

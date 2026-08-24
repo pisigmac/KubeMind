@@ -156,13 +156,24 @@ app = FastAPI(
 )
 
 
+from kubemind_tracing import extract_correlation_id
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER],
+    allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER, "x-correlation-id"],
 )
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    correlation_id = extract_correlation_id(request.headers)
+    request.state.correlation_id = correlation_id
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
 
 
 # ── Auth dependency ──────────────────────────────────────────────
@@ -284,25 +295,26 @@ def _enrich(
     return response
 
 
-async def _emit_decision(record: DecisionRecord):
+async def _emit_decision(record: DecisionRecord, correlation_id: Optional[str] = None):
     """Send the routing decision to sentinel as a span."""
     router_metrics.record_decision(record)
     if not sentinel_client:
         return
     now = datetime.utcnow().isoformat() + "Z"
-    await sentinel_client.log_span(
-        {
-            "trace_id": record.request_id,
-            "span_id": str(uuid.uuid4()),
-            "workspace_id": record.workspace_id,
-            "service": "router",
-            "operation": "route_decision",
-            "start_time": now,
-            "end_time": now,
-            "status": record.status,
-            "attributes": record.as_attributes(),
-        }
-    )
+    span_payload = {
+        "trace_id": record.request_id,
+        "span_id": str(uuid.uuid4()),
+        "workspace_id": record.workspace_id,
+        "service": "router",
+        "operation": "route_decision",
+        "start_time": now,
+        "end_time": now,
+        "status": record.status,
+        "attributes": record.as_attributes(),
+    }
+    if correlation_id:
+        span_payload["correlation_id"] = correlation_id
+    await sentinel_client.log_span(span_payload)
 
 
 def _apply_profile(req: ChatRequest, profile: RouteProfile) -> ChatRequest:
@@ -339,6 +351,7 @@ async def _dispatch_chat(
 
     t0 = time.perf_counter()
     request_id = str(uuid.uuid4())
+    correlation_id = getattr(request, "state", None) and getattr(request.state, "correlation_id", None)
     record = DecisionRecord(
         request_id=request_id,
         workspace_id=workspace_id,
@@ -379,7 +392,7 @@ async def _dispatch_chat(
             record.status = "error"
             record.error = "policy_unavailable"
             record.latency_ms = (time.perf_counter() - t0) * 1000
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             raise HTTPException(
                 status_code=503,
                 detail="Policy engine unavailable and fail_closed is set",
@@ -396,7 +409,7 @@ async def _dispatch_chat(
         record.status = "blocked"
         record.billable = False
         record.latency_ms = (time.perf_counter() - t0) * 1000
-        await _emit_decision(record)
+        await _emit_decision(record, correlation_id)
         raise HTTPException(
             status_code=403,
             detail={
@@ -506,7 +519,7 @@ async def _dispatch_chat(
             record.billable = False
             record.route_target = "cache/exact"
             record.latency_ms = latency_ms
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             out["_rl_headers"] = rl_headers
             return _restore_response(out, active_token_map)
     sig = cache_signature(req.model, _system_prompt(req.messages), req.temperature or 0.7)
@@ -560,7 +573,7 @@ async def _dispatch_chat(
             record.billable = False
             record.route_target = "cache/semantic"
             record.latency_ms = latency_ms
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             out["_rl_headers"] = rl_headers
             return _restore_response(out, active_token_map)
 
@@ -570,8 +583,9 @@ async def _dispatch_chat(
     if profile.retrieval:
         outcome = RetrievalOutcome(STATUS_UNAVAILABLE)
         if mind_client:
+            correlation_id = getattr(request.state, "correlation_id", None)
             outcome = await mind_client.retrieve(
-                classification_text, workspace_id, top_k=profile.retrieval_top_k
+                classification_text, workspace_id, top_k=profile.retrieval_top_k, correlation_id=correlation_id
             )
         retrieval_status = outcome.status
         record.retrieval_status = outcome.status
@@ -581,7 +595,7 @@ async def _dispatch_chat(
             record.error = "retrieval_unavailable"
             record.billable = False
             record.latency_ms = (time.perf_counter() - t0) * 1000
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             raise HTTPException(
                 status_code=503,
                 detail="Knowledge retrieval unavailable",
@@ -629,7 +643,7 @@ async def _dispatch_chat(
         record.latency_ms = (time.perf_counter() - t0) * 1000
         if local_only:
             record.error = "no_local_provider"
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             # Falling back to a cloud provider here would defeat the verdict,
             # so refusing is the only correct answer.
             raise HTTPException(
@@ -640,7 +654,7 @@ async def _dispatch_chat(
                 ),
             )
         record.error = "no_provider"
-        await _emit_decision(record)
+        await _emit_decision(record, correlation_id)
         raise HTTPException(
             status_code=503, detail=f"No healthy provider available for model: {req.model}"
         )
@@ -650,7 +664,7 @@ async def _dispatch_chat(
         if not selected_candidate:
             record.status = "error"
             record.error = "no_eligible_provider"
-            await _emit_decision(record)
+            await _emit_decision(record, correlation_id)
             raise HTTPException(status_code=503, detail="No eligible provider available for streaming")
 
         async def sse_event_stream():
@@ -706,7 +720,7 @@ async def _dispatch_chat(
         record.status = "success"
         record.provider = selected_candidate.name
         record.latency_ms = (time.perf_counter() - t0) * 1000
-        await _emit_decision(record)
+        await _emit_decision(record, correlation_id)
         return StreamingResponse(sse_event_stream(), media_type="text/event-stream")
 
     response: Optional[Dict[str, Any]] = None
@@ -757,7 +771,7 @@ async def _dispatch_chat(
         record.error = "provider_unavailable"
         record.billable = False
         record.latency_ms = (time.perf_counter() - t0) * 1000
-        await _emit_decision(record)
+        await _emit_decision(record, correlation_id)
         raise HTTPException(status_code=502, detail="Provider unavailable")
 
     if record.cascade_escalated and used_fallback:
@@ -819,7 +833,7 @@ async def _dispatch_chat(
             partition=partition,
         )
 
-    await _emit_decision(record)
+    await _emit_decision(record, correlation_id)
     await _capture_feedback(
         record,
         classification_text,
