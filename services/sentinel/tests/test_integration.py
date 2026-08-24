@@ -38,8 +38,18 @@ def _span(span_id="span-1", workspace="test", **attrs):
 
 class TestHealth:
     def test_health(self, client):
-        data = client.get("/health").json()
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "healthy"
         assert data["service"] == "sentinel"
+        assert "tracelens" in data
+
+    def test_health_reports_tracelens_enabled(self, client, monkeypatch):
+        monkeypatch.setenv("TRACELENS_ENDPOINT", "http://tracelens:8080")
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["tracelens"] is True
 
     def test_prometheus_scrape(self, client):
         resp = client.get("/metrics")

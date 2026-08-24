@@ -28,12 +28,14 @@ from sentinel.redaction import redact_attributes
 from sentinel.guardrails import annotate_attributes
 from sentinel import metrics as prom_metrics
 from sentinel import otel as otel_export
+from sentinel import tracelens as tracelens_export
 import hashlib
 
 # ── Global state ─────────────────────────────────────────────────
 store: TraceStore | None = None
 manager: ConnectionManager | None = None
 ledger: AuditLedger | None = None
+tracelens_client: tracelens_export.TraceLensExporter = tracelens_export.TraceLensExporter()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
     print(
         f"[sentinel] Initialized "
         f"(redaction=on, otlp={'on' if otel_export.enabled() else 'off'}, "
+        f"tracelens={'on' if tracelens_export.enabled() else 'off'}, "
         f"ledger={'on' if ledger else 'off'})"
     )
     yield
@@ -63,6 +66,7 @@ async def lifespan(app: FastAPI):
     prune_task.cancel()
     heartbeat_task.cancel()
     await otel_export.close()
+    await tracelens_client.close()
     if ledger:
         ledger.close()
 
@@ -170,12 +174,13 @@ async def health():
     return {
         "status": "healthy",
         "service": "sentinel",
-        "version": "0.2.0",
+        "version": "0.3.1",
         "spans_stored": stats.get("total_spans", 0),
         "workspaces": stats.get("workspaces", 0),
         "websocket_connections": manager.get_connection_count() if manager else 0,
         "redaction": True,
         "otlp": otel_export.enabled(),
+        "tracelens": tracelens_export.enabled(),
     }
 
 # ── Span Ingestion ─────────────────────────────────────────────
@@ -218,6 +223,7 @@ async def ingest_span(req: SpanIngest, request: Request, auth=Depends(get_auth))
         prom_metrics.record_injection_flagged()
 
     await otel_export.export_span(payload)
+    await tracelens_client.export_span(payload)
 
     # Broadcast to WebSocket subscribers (already redacted)
     if manager:
