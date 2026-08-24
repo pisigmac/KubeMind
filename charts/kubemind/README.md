@@ -25,3 +25,17 @@ The mode is fixed at process startup, appears in `/health`, and never falls
 back automatically.
 
 Prometheus scrapes `/metrics` on router and sentinel via the pod annotations.
+
+### TraceLens Integration
+
+Sentinel supports native telemetry span export to TraceLens (`/home/oh20210736-ud/Documents/WorkSpace/tracelens`):
+
+```yaml
+observability:
+  tracelens:
+    enabled: true
+    endpoint: "http://tracelens-collector:8080"
+    token: "your-tracelens-token"
+```
+
+When enabled, Sentinel formats all ingested spans into TraceLens `/v1/spans` batches and exports them asynchronously with Bearer token authentication.

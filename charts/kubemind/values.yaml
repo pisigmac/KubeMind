@@ -94,3 +94,7 @@ observability:
     enabled: false
   grafanaDashboard:
     enabled: false
+  tracelens:
+    enabled: false
+    endpoint: "" # e.g. "http://tracelens-collector:8080"
+    token: ""    # Bearer token for TraceLens collector authorization
