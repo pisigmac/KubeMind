@@ -25,7 +25,8 @@ echo -e "\n${CYAN}${BOLD}=======================================================
 echo -e "${CYAN}${BOLD}    🛡️ Cryptographic SHA-256 Audit Ledger Verification (${WORKSPACE})   ${NC}"
 echo -e "${CYAN}${BOLD}====================================================================${NC}\n"
 
-RESP=$(curl -sf "${SENTINEL_URL}/v1/audit/verify?workspace_id=${WORKSPACE}&limit=${LIMIT}" 2>/dev/null || true)
+API_KEY="${KUBEMIND_API_KEY:-kmind-local-dev-key}"
+RESP=$(curl -sf -H "X-Workspace-ID: ${WORKSPACE}" -H "X-API-Key: ${API_KEY}" "${SENTINEL_URL}/v1/audit/verify?workspace_id=${WORKSPACE}&limit=${LIMIT}" 2>/dev/null || true)
 
 if [[ -z "$RESP" ]]; then
   echo -e "  ${RED}❌ Failed to connect to Sentinel at ${SENTINEL_URL}${NC}\n"
@@ -38,7 +39,7 @@ python3 - <<EOF
 import json, sys
 
 data = json.loads('''$RESP''')
-verified = data.get("verified", False)
+verified = data.get("valid") if "valid" in data else data.get("verified", False)
 entries_checked = data.get("entries_checked", 0)
 head_hash = data.get("head_hash", "None")
 
