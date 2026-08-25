@@ -1,3 +1,4 @@
+import os
 import httpx
 from typing import List, Dict, Any, Optional
 
@@ -9,16 +10,20 @@ class KubeMindClient:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        workspace_id: str = "default",
-        router_url: str = "http://localhost:9080",
-        mind_url: str = "http://localhost:9081",
-        sentinel_url: str = "http://localhost:9083",
+        workspace_id: Optional[str] = None,
+        router_url: Optional[str] = None,
+        mind_url: Optional[str] = None,
+        sentinel_url: Optional[str] = None,
         timeout: float = 30.0
     ):
-        self.workspace_id = workspace_id
-        self.router_url = router_url.rstrip("/")
-        self.mind_url = mind_url.rstrip("/")
-        self.sentinel_url = sentinel_url.rstrip("/")
+        self.workspace_id = workspace_id or os.environ.get("KUBEMIND_WORKSPACE", "default")
+        resolved_router = router_url or os.environ.get("ROUTER_URL", os.environ.get("KUBEMIND_ROUTER_URL", "http://localhost:9080"))
+        resolved_mind = mind_url or os.environ.get("MIND_URL", os.environ.get("KUBEMIND_MIND_URL", "http://localhost:9081"))
+        resolved_sentinel = sentinel_url or os.environ.get("SENTINEL_URL", os.environ.get("KUBEMIND_SENTINEL_URL", "http://localhost:9083"))
+        
+        self.router_url = resolved_router.rstrip("/")
+        self.mind_url = resolved_mind.rstrip("/")
+        self.sentinel_url = resolved_sentinel.rstrip("/")
         self.timeout = timeout
         
         self.headers = {

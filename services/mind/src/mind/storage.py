@@ -78,9 +78,13 @@ class KnowledgeStore:
         self.embed_dim = EMBED_DIM
 
     async def init(self, db_url: Optional[str] = None):
-        db_url = db_url or os.environ.get(
-            "DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore"
-        )
+        try:
+            from kubemind_config import get_database_url
+            db_url = db_url or get_database_url()
+        except ImportError:
+            db_url = db_url or os.environ.get(
+                "DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore"
+            )
         sqlite = db_url.startswith("sqlite")
         if sqlite:
             async_url = db_url if "+aiosqlite" in db_url else db_url.replace(

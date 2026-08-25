@@ -28,7 +28,11 @@ class UsageTracker:
         self.session_maker = None
 
     async def init(self):
-        db_url = os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
+        try:
+            from kubemind_config import get_database_url
+            db_url = get_database_url()
+        except ImportError:
+            db_url = os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
         async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
         self.engine = create_async_engine(async_url, echo=False)
 

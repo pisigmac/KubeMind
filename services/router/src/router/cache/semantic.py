@@ -83,10 +83,14 @@ class SemanticCache:
         self.embedding_prefix = embedding_prefix
         self.backend = backend
         self.pgvector = pgvector_store
-        self.ollama_base_url = (
-            ollama_base_url
-            or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        ).rstrip("/")
+        try:
+            from kubemind_config import get_ollama_base_url
+            self.ollama_base_url = (ollama_base_url or get_ollama_base_url()).rstrip("/")
+        except ImportError:
+            self.ollama_base_url = (
+                ollama_base_url
+                or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+            ).rstrip("/")
         self._http: Optional[httpx.AsyncClient] = None
         self.is_ready = False
 

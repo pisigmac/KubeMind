@@ -5,7 +5,11 @@ from typing import List, Optional
 
 class EmbeddingGenerator:
     def __init__(self):
-        self.base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+        try:
+            from kubemind_config import get_ollama_base_url
+            self.base_url = get_ollama_base_url().rstrip("/")
+        except ImportError:
+            self.base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         self.model = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
         self.dimensions = 768
         self.client: Optional[httpx.AsyncClient] = None

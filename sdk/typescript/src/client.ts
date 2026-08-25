@@ -36,11 +36,13 @@ export class KubeMindClient {
   private timeoutMs: number;
 
   constructor(config: KubeMindClientConfig = {}) {
-    this.apiKey = config.apiKey;
-    this.workspaceId = config.workspaceId || "default";
-    this.routerUrl = (config.routerUrl || "http://localhost:9080").replace(/\/+$/, "");
-    this.mindUrl = (config.mindUrl || "http://localhost:9081").replace(/\/+$/, "");
-    this.sentinelUrl = (config.sentinelUrl || "http://localhost:9083").replace(/\/+$/, "");
+    const globalProcess = typeof globalThis !== "undefined" ? (globalThis as { process?: { env?: Record<string, string | undefined> } }).process : undefined;
+    const env = globalProcess?.env || {};
+    this.apiKey = config.apiKey || env.KUBEMIND_API_KEY || env.API_KEY;
+    this.workspaceId = config.workspaceId || env.KUBEMIND_WORKSPACE || env.WORKSPACE_ID || "default";
+    this.routerUrl = (config.routerUrl || env.ROUTER_URL || env.KUBEMIND_ROUTER_URL || "http://localhost:9080").replace(/\/+$/, "");
+    this.mindUrl = (config.mindUrl || env.MIND_URL || env.KUBEMIND_MIND_URL || "http://localhost:9081").replace(/\/+$/, "");
+    this.sentinelUrl = (config.sentinelUrl || env.SENTINEL_URL || env.TRACER_URL || env.KUBEMIND_SENTINEL_URL || "http://localhost:9083").replace(/\/+$/, "");
     this.timeoutMs = config.timeoutMs || 30000;
   }
 

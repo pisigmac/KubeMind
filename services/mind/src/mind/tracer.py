@@ -5,7 +5,11 @@ from datetime import datetime
 
 class TracerClient:
     def __init__(self, service_name: str = "unknown"):
-        self.sentinel_url = os.environ.get("SENTINEL_URL", "http://localhost:9083")
+        try:
+            from kubemind_config import get_sentinel_url
+            self.sentinel_url = get_sentinel_url()
+        except ImportError:
+            self.sentinel_url = os.environ.get("SENTINEL_URL", "http://localhost:9083")
         self.service_name = service_name
         self.client: Optional[httpx.AsyncClient] = None
         self.enabled = True

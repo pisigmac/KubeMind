@@ -4,11 +4,18 @@ import redis.asyncio as redis
 from typing import Optional, Dict
 
 
+try:
+    from kubemind_config import get_redis_url
+except ImportError:
+    def get_redis_url(default=None):
+        return os.environ.get("REDIS_URL", default or "redis://localhost:6379/0")
+
+
 class CacheManager:
     def __init__(self):
         self.client: Optional[redis.Redis] = None
         self.is_connected = False
-        self._redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        self._redis_url = get_redis_url()
 
     async def connect(self):
         try:

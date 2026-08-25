@@ -5,7 +5,11 @@ from typing import List, Dict, Any, Optional
 
 class Planner:
     def __init__(self):
-        self.router_url = os.environ.get("ROUTER_URL", "http://localhost:9080")
+        try:
+            from kubemind_config import get_router_url
+            self.router_url = get_router_url()
+        except ImportError:
+            self.router_url = os.environ.get("ROUTER_URL", "http://localhost:9080")
         self.default_model = os.environ.get("PLANNER_MODEL", "llama3.1")
         self.client: Optional[httpx.AsyncClient] = None
         self.is_ready = False

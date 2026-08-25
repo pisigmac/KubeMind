@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -45,22 +44,32 @@ func LoadConfig() (*Config, error) {
 		return &cfg, nil
 	}
 
-	return nil, fmt.Errorf("config not found — run `kmind init` first (looked for ~/.kmind/config.yaml)")
+	// If no config file is found on disk, gracefully return DefaultConfig (which resolves from env)
+	return DefaultConfig(), nil
+}
+
+func getEnv(keys []string, fallback string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return fallback
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		APIEndpoint:       "http://localhost:9082",
-		KnowledgeEndpoint: "http://localhost:9081",
-		GatewayEndpoint:   "http://localhost:9080",
-		TraceEndpoint:     "http://localhost:9083",
-		DashboardURL:      "http://localhost:9000",
+		APIEndpoint:       getEnv([]string{"AGENTS_URL", "KUBEMIND_AGENTS_URL"}, "http://localhost:9082"),
+		KnowledgeEndpoint: getEnv([]string{"MIND_URL", "KUBEMIND_MIND_URL"}, "http://localhost:9081"),
+		GatewayEndpoint:   getEnv([]string{"ROUTER_URL", "KUBEMIND_ROUTER_URL"}, "http://localhost:9080"),
+		TraceEndpoint:     getEnv([]string{"SENTINEL_URL", "TRACER_URL", "KUBEMIND_SENTINEL_URL"}, "http://localhost:9083"),
+		DashboardURL:      getEnv([]string{"DASHBOARD_URL", "KUBEMIND_DASHBOARD_URL"}, "http://localhost:9000"),
 		Workspace: struct {
 			ID     string `yaml:"id"`
 			APIKey string `yaml:"api_key"`
 		}{
-			ID:     "default",
-			APIKey: "kmind-local-dev-key",
+			ID:     getEnv([]string{"KUBEMIND_WORKSPACE", "WORKSPACE_ID"}, "default"),
+			APIKey: getEnv([]string{"KUBEMIND_API_KEY", "API_KEY"}, "kmind-local-dev-key"),
 		},
 	}
 }

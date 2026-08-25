@@ -5,10 +5,14 @@ from typing import Dict, Any, Optional
 
 class TracerClient:
     def __init__(self):
-        self.sentinel_url = os.environ.get(
-            "SENTINEL_URL",
-            os.environ.get("TRACER_URL", "http://localhost:9083"),
-        )
+        try:
+            from kubemind_config import get_sentinel_url
+            self.sentinel_url = get_sentinel_url()
+        except ImportError:
+            self.sentinel_url = os.environ.get(
+                "SENTINEL_URL",
+                os.environ.get("TRACER_URL", "http://localhost:9083"),
+            )
         self.client: Optional[httpx.AsyncClient] = None
         self.enabled = True
 

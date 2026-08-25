@@ -33,9 +33,17 @@ class AgentEngine:
         self.planner = planner
         self.memory = memory
         self.sentinel = sentinel or tracer
-        self.router_url = os.environ.get("ROUTER_URL", "http://localhost:9080")
-        self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
-        self.sentinel_url = os.environ.get("SENTINEL_URL", "http://localhost:9083")
+        try:
+            from kubemind_config import get_router_url, get_mind_url, get_sentinel_url, get_database_url
+            self.router_url = get_router_url()
+            self.mind_url = get_mind_url()
+            self.sentinel_url = get_sentinel_url()
+            self._db_url_getter = get_database_url
+        except ImportError:
+            self.router_url = os.environ.get("ROUTER_URL", "http://localhost:9080")
+            self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
+            self.sentinel_url = os.environ.get("SENTINEL_URL", "http://localhost:9083")
+            self._db_url_getter = lambda: os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
         self.default_model = os.environ.get("AGENT_MODEL", "llama3.1")
         self.max_steps = int(os.environ.get("MAX_STEPS", "20"))
         self.engine = None
@@ -44,7 +52,7 @@ class AgentEngine:
         self.client = None
 
     async def init(self):
-        db_url = os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
+        db_url = self._db_url_getter()
         async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
         self.engine = create_async_engine(async_url, echo=False)
 

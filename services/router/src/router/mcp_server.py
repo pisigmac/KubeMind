@@ -12,9 +12,16 @@ import sys
 from typing import Any, Dict, List
 import httpx
 
-ROUTER_URL = os.environ.get("ROUTER_URL", "http://localhost:9080")
-MIND_URL = os.environ.get("MIND_URL", "http://localhost:9081")
-SENTINEL_URL = os.environ.get("SENTINEL_URL", "http://localhost:9083")
+try:
+    from kubemind_config import get_router_url, get_mind_url, get_sentinel_url
+    ROUTER_URL = get_router_url()
+    MIND_URL = get_mind_url()
+    SENTINEL_URL = get_sentinel_url()
+except ImportError:
+    ROUTER_URL = os.environ.get("ROUTER_URL", "http://localhost:9080")
+    MIND_URL = os.environ.get("MIND_URL", "http://localhost:9081")
+    SENTINEL_URL = os.environ.get("SENTINEL_URL", "http://localhost:9083")
+
 API_KEY = os.environ.get("KUBEMIND_API_KEY", "")
 WORKSPACE_ID = os.environ.get("KUBEMIND_WORKSPACE", "default")
 

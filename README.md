@@ -179,6 +179,7 @@ Logs are written to `logs/latest.log` with full request and response traces.
 
 | Document | Description |
 |----------|-------------|
+| [docs/terminal-agents-guide.md](docs/terminal-agents-guide.md) | Terminal Agents (Aider, Claude Code, Python) & Existing LLMs Integration |
 | [docs/architecture.md](docs/architecture.md) | Canonical Reference Architecture & System Topology |
 | [docs/api.md](docs/api.md) | Complete Public API & `kmind` CLI Inventory |
 | [docs/integration.md](docs/integration.md) | OpenDesk Identity & PayDeck Billing Integration Guide |

@@ -37,7 +37,10 @@ func (c *APIClient) Post(path string, body any) ([]byte, error) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("X-API-Key", c.APIKey)
+	}
 	req.Header.Set("X-Workspace-ID", c.Workspace)
 
 	resp, err := c.HTTPClient.Do(req)
@@ -59,7 +62,10 @@ func (c *APIClient) Get(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("X-API-Key", c.APIKey)
+	}
 	req.Header.Set("X-Workspace-ID", c.Workspace)
 
 	resp, err := c.HTTPClient.Do(req)

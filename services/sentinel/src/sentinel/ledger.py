@@ -138,17 +138,34 @@ class AuditLedger:
             url = f"sqlite:///{path}"
         self.url = _normalise_url(url)
         self.is_postgres = self.url.startswith("postgresql")
-        self.engine = create_engine(
-            self.url,
-            future=True,
-            pool_pre_ping=True,
-            connect_args={"check_same_thread": False} if not self.is_postgres else {},
-        )
-        # SQLite has no row-level locking, so appends are serialised here.
-        # Postgres uses SELECT ... FOR UPDATE on the head row instead, which
-        # holds across processes as well as threads.
-        self._lock = threading.Lock()
-        self._init_schema()
+        try:
+            self.engine = create_engine(
+                self.url,
+                future=True,
+                pool_pre_ping=True,
+                connect_args={"check_same_thread": False} if not self.is_postgres else {},
+            )
+            self._lock = threading.Lock()
+            self._init_schema()
+        except Exception as err:
+            if self.is_postgres:
+                print(f"[sentinel] Postgres audit ledger unavailable ({err}), falling back to SQLite...")
+                path = os.environ.get("TRACER_DB_PATH", "./data/sentinel.db")
+                directory = os.path.dirname(path)
+                if directory:
+                    os.makedirs(directory, exist_ok=True)
+                self.url = f"sqlite:///{path}"
+                self.is_postgres = False
+                self.engine = create_engine(
+                    self.url,
+                    future=True,
+                    pool_pre_ping=True,
+                    connect_args={"check_same_thread": False},
+                )
+                self._lock = threading.Lock()
+                self._init_schema()
+            else:
+                raise err
 
     def _init_schema(self):
         metadata.create_all(self.engine)

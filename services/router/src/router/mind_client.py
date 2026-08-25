@@ -49,9 +49,13 @@ class MindClient:
         timeout: float = 3.0,
         max_context_chars: int = 6000,
     ):
-        self.base_url = (
-            base_url or os.environ.get("MIND_URL", "http://localhost:9081")
-        ).rstrip("/")
+        try:
+            from kubemind_config import get_mind_url
+            self.base_url = (base_url or get_mind_url()).rstrip("/")
+        except ImportError:
+            self.base_url = (
+                base_url or os.environ.get("MIND_URL", "http://localhost:9081")
+            ).rstrip("/")
         self.timeout = timeout
         self.max_context_chars = max_context_chars
         self.client: Optional[httpx.AsyncClient] = None

@@ -4,7 +4,11 @@ from typing import List, Dict, Optional
 
 class MemoryManager:
     def __init__(self):
-        self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
+        try:
+            from kubemind_config import get_mind_url
+            self.mind_url = get_mind_url()
+        except ImportError:
+            self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
         self.client: Optional[httpx.AsyncClient] = None
         self.is_ready = False
         self.retention_turns = int(os.environ.get("MEMORY_RETENTION_TURNS", "10"))

@@ -8,10 +8,16 @@ from router.providers.base import BaseProvider
 class OllamaProvider(BaseProvider):
     def __init__(self, name: str, config: Dict[str, Any]):
         super().__init__(name, config)
-        raw_url = config.get("base_url") or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        try:
+            from kubemind_config import get_ollama_base_url
+            default_ollama = get_ollama_base_url()
+        except ImportError:
+            default_ollama = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+        raw_url = config.get("base_url") or default_ollama
         if raw_url.startswith("${") and raw_url.endswith("}"):
             var_name = raw_url[2:-1]
-            raw_url = os.environ.get(var_name, "http://ollama:11434")
+            raw_url = os.environ.get(var_name, default_ollama)
         self.base_url = raw_url.rstrip("/")
         timeout = config.get("timeout_seconds", 120)
         self.client = httpx.AsyncClient(

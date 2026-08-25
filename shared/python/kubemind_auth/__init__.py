@@ -77,13 +77,17 @@ class KeyBinding:
 
 
 def cors_origins(default: Optional[List[str]] = None) -> List[str]:
-    """Read allowed origins from KUBEMIND_CORS_ORIGINS."""
-    raw = os.environ.get("KUBEMIND_CORS_ORIGINS", "").strip()
-    if not raw:
-        return list(default or ["http://localhost:9000", "http://localhost:3000"])
-    if raw == "*":
-        raise ValueError("wildcard CORS is prohibited; configure explicit origins")
-    return [o.strip() for o in raw.split(",") if o.strip()]
+    """Read allowed origins from KUBEMIND_CORS_ORIGINS via config."""
+    try:
+        from kubemind_config import get_cors_origins
+        return get_cors_origins(default=default)
+    except ImportError:
+        raw = os.environ.get("KUBEMIND_CORS_ORIGINS", "").strip()
+        if not raw:
+            return list(default or ["http://localhost:9000", "http://localhost:3000"])
+        if raw == "*":
+            raise ValueError("wildcard CORS is prohibited; configure explicit origins")
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
 
 def valid_workspace(ws: str) -> bool:
@@ -124,7 +128,11 @@ def verify_opendesk_jwt(token: str) -> Dict[str, Any]:
     """Validate RS256 Bearer JWT against OpenDesk JWKS endpoint.
     Caches public keys in-memory for zero latency.
     """
-    jwks_url = os.environ.get("AUTH_JWKS_URL", "http://localhost:8090/.well-known/jwks.json")
+    try:
+        from kubemind_config import get_auth_jwks_url
+        jwks_url = get_auth_jwks_url()
+    except ImportError:
+        jwks_url = os.environ.get("AUTH_JWKS_URL", "http://localhost:8090/.well-known/jwks.json")
     try:
         import jwt
         from jwt import PyJWKClient

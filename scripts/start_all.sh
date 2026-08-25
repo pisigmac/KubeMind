@@ -131,14 +131,57 @@ wait_for_endpoint "Next.js Dashboard" "http://localhost:9000" 30
 
 # 6. Seed demo data if requested
 if [[ $DO_SEED -eq 1 ]]; then
-  echo -e "\n  ${CYAN}[4/4] Seeding demo knowledge & audit traces...${NC}"
+  echo -e "\n  ${CYAN}[4/5] Seeding demo knowledge & audit traces...${NC}"
   if [[ -f "${SCRIPT_DIR}/seed_demo_data.sh" ]]; then
     bash "${SCRIPT_DIR}/seed_demo_data.sh"
   else
     echo -e "  ${YELLOW}⚠ seed_demo_data.sh not found, skipping.${NC}"
   fi
 else
-  echo -e "  ${CYAN}[4/4] Skipping demo data seed (run with --seed to auto-populate).${NC}"
+  echo -e "  ${CYAN}[4/5] Skipping demo data seed (run with --seed to auto-populate).${NC}"
+fi
+
+# 7. Ensure kmind CLI is built and in PATH
+echo -e "  ${CYAN}[5/5] Checking kmind CLI toolchain & PATH...${NC}"
+BIN_DIR="${ROOT_DIR}/bin"
+KMIND_BIN="${BIN_DIR}/kmind"
+
+if [[ ! -f "$KMIND_BIN" ]]; then
+  if command -v go >/dev/null 2>&1; then
+    echo -e "    Building kmind binary from source..."
+    mkdir -p "$BIN_DIR"
+    (cd "${ROOT_DIR}/cmd/kmind" && go build -o "${KMIND_BIN}" .)
+    (cd "$BIN_DIR" && ln -sfn kmind tricore 2>/dev/null || true)
+    echo -e "    ${GREEN}✓ Built ${KMIND_BIN}${NC}"
+  fi
+fi
+
+if [[ -f "$KMIND_BIN" ]]; then
+  # Symlink to ~/.local/bin if directory exists
+  if [[ -d "${HOME}/.local/bin" ]]; then
+    ln -sf "$KMIND_BIN" "${HOME}/.local/bin/kmind"
+    ln -sf "$KMIND_BIN" "${HOME}/.local/bin/tricore" 2>/dev/null || true
+    echo -e "    ${GREEN}✓ Linked kmind to ${HOME}/.local/bin/kmind${NC}"
+  fi
+
+  # Add to shell profile if not present
+  SHELL_RC=""
+  if [[ -n "${SHELL:-}" && "$SHELL" == *"zsh"* ]]; then
+    SHELL_RC="${HOME}/.zshrc"
+  elif [[ -f "${HOME}/.bashrc" ]]; then
+    SHELL_RC="${HOME}/.bashrc"
+  elif [[ -f "${HOME}/.profile" ]]; then
+    SHELL_RC="${HOME}/.profile"
+  fi
+
+  if [[ -n "$SHELL_RC" && -f "$SHELL_RC" ]]; then
+    if ! grep -qs "${BIN_DIR}" "$SHELL_RC" && ! grep -qs "kmind" "$SHELL_RC"; then
+      echo "" >> "$SHELL_RC"
+      echo "# KubeMind CLI" >> "$SHELL_RC"
+      echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "$SHELL_RC"
+      echo -e "    ${GREEN}✓ Added ${BIN_DIR} to PATH in ${SHELL_RC}${NC}"
+    fi
+  fi
 fi
 
 # 7. Print System Status Banner
