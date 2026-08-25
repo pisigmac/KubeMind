@@ -29,22 +29,44 @@ providers:
     timeout_seconds: 120
   groq:
     base_url: "https://api.groq.com/openai/v1"
-    models: ["llama-3.1-70b", "mixtral-8x7b", "llama-3.1-8b-instant"]
+    api_key: "${GROQ_API_KEY}"
+    models: ["llama-3.1-70b", "llama-3.1-8b-instant", "mixtral-8x7b", "llama3-70b-8192", "llama3-8b-8192"]
     priority: 3
     quality_rank: 3
     free: true
-    rate_limit: 20
+    rate_limit: 30
     timeout_seconds: 30
   google:
-    models: ["gemini-1.5-flash"]
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+    api_key: "${GOOGLE_API_KEY}"
+    models: ["gemini-2.5-flash", "gemini-3.1-pro-preview", "gemini-flash-latest", "gemini-pro-latest", "gemini-1.5-flash", "*"]
     priority: 4
-    quality_rank: 3
+    quality_rank: 2
     free: true
     rate_limit: 60
     timeout_seconds: 30
+  kimi:
+    base_url: "https://api.moonshot.cn/v1"
+    api_key: "${KIMI_API_KEY}"
+    models: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "kimi-latest"]
+    priority: 5
+    quality_rank: 2
+    free: false
+    rate_limit: 50
+    timeout_seconds: 60
+  grok:
+    base_url: "https://api.x.ai/v1"
+    api_key: "${GROK_API_KEY}"
+    models: ["grok-2", "grok-2-latest", "grok-beta"]
+    priority: 5
+    quality_rank: 2
+    free: false
+    rate_limit: 50
+    timeout_seconds: 60
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    models: ["meta-llama/llama-3.1-70b"]
+    api_key: "${OPENROUTER_API_KEY}"
+    models: ["meta-llama/llama-3.1-70b", "anthropic/claude-3.5-sonnet", "openai/gpt-4o"]
     priority: 5
     quality_rank: 3
     free: true
@@ -52,7 +74,8 @@ providers:
     timeout_seconds: 30
   openai:
     base_url: "https://api.openai.com/v1"
-    models: ["gpt-4o-mini", "gpt-4o"]
+    api_key: "${OPENAI_API_KEY}"
+    models: ["gpt-4o-mini", "gpt-4o", "o1-mini", "o1-preview", "gpt-3.5-turbo"]
     priority: 6
     quality_rank: 1
     free: false
@@ -60,6 +83,7 @@ providers:
     timeout_seconds: 30
   anthropic:
     base_url: "${ANTHROPIC_BASE_URL}"
+    api_key: "${ANTHROPIC_API_KEY}"
     models: ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]
     priority: 6
     quality_rank: 1
@@ -166,13 +190,13 @@ routing:
   # Profiles say what a request should become, not just where it goes.
   profiles:
     general:
-      pool: [ollama, groq, google]
+      pool: [google, ollama, groq, openai]
       cache:
         enabled: true
         distance_threshold: 0.05
 
     code:
-      pool: [deepseek_local, ollama, groq]
+      pool: [google, deepseek_local, ollama, groq, openai]
       temperature: 0.2
       system_prompt: >-
         You are a precise software engineer. Prefer correct, runnable code and
@@ -184,7 +208,7 @@ routing:
         distance_threshold: 0.02
 
     knowledge:
-      pool: [ollama, groq]
+      pool: [google, ollama, groq, openai]
       retrieval: true
       retrieval_top_k: 4
       temperature: 0.1
@@ -196,13 +220,13 @@ routing:
       # Security questions tend to carry sensitive detail. Keeping them on
       # local providers is a routing preference; the policy engine is what
       # actually enforces egress, independently of this classifier.
-      pool: [ollama, vllm, deepseek_local]
+      pool: [ollama, vllm, deepseek_local, google]
       temperature: 0.1
       cache:
         enabled: false
 
     fast_local:
-      pool: [ollama, vllm]
+      pool: [ollama, vllm, google]
       temperature: 0.0
       max_tokens: 1024
       system_prompt: >-

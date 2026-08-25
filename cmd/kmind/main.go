@@ -62,6 +62,8 @@ func main() {
 		commands.Logs(cfg, os.Args[2:])
 	case "fetch-models", "fetch_models":
 		commands.FetchModels(cfg, os.Args[2:])
+	case "sync-models", "sync_models", "models":
+		commands.SyncModels(cfg, os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
 		commands.PrintUsage()

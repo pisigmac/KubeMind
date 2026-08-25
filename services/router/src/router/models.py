@@ -157,6 +157,11 @@ class DecisionRecord(BaseModel):
     cache_type: Optional[str] = None
     billable: bool = True
 
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+
     cascade_escalated: bool = False
     cascade_reason: Optional[str] = None
 

@@ -86,5 +86,17 @@ class OpenAICompatibleProvider(BaseProvider):
         self.record_failure()
         return False
 
+    async def fetch_upstream_models(self) -> list[str]:
+        """Dynamically discover available models directly from upstream provider API."""
+        try:
+            resp = await self.client.get("/models", timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+                    return [m["id"] for m in data["data"] if isinstance(m, dict) and "id" in m]
+        except Exception:
+            pass
+        return []
+
     async def close(self):
         await self.client.aclose()

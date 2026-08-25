@@ -104,18 +104,71 @@ class ProviderRegistry:
                 f"(priority={resolved.get('priority', 99)}, free={resolved.get('free', False)})"
             )
 
+        # Dynamically discover and register live upstream models
+        for name, provider in list(self.providers.items()):
+            if hasattr(provider, "fetch_upstream_models"):
+                try:
+                    discovered = await provider.fetch_upstream_models()
+                    if discovered:
+                        existing = set(provider.config.get("models", []))
+                        merged = list(existing.union(discovered))
+                        provider.config["models"] = merged
+                        print(f"[router] ⚡ Dynamically discovered {len(discovered)} models for {name}: {discovered[:4]}")
+                except Exception as err:
+                    print(f"[router] Dynamic model discovery skipped for {name}: {err}")
+
         # Share breaker state across replicas when Redis is available.
         redis_client = getattr(self.cache, "client", None) if self.cache else None
         if redis_client:
             for provider in self.providers.values():
                 provider.bind_circuit_redis(redis_client)
 
+    async def sync_upstream_models(self) -> Dict[str, Any]:
+        """Query live /models endpoints for all configured providers and refresh catalog."""
+        results: Dict[str, Any] = {"providers": {}, "total_models": 0}
+        for name, provider in list(self.providers.items()):
+            prov_info: Dict[str, Any] = {
+                "healthy": provider.can_execute(),
+                "priority": provider.config.get("priority", 99),
+                "free": provider.config.get("free", False),
+                "models": [m for m in provider.config.get("models", []) if m != "*"],
+                "discovered": 0,
+            }
+            if hasattr(provider, "fetch_upstream_models"):
+                try:
+                    discovered = await provider.fetch_upstream_models()
+                    if discovered:
+                        existing = set(provider.config.get("models", []))
+                        merged = sorted(list(existing.union(discovered)))
+                        provider.config["models"] = merged
+                        prov_info["models"] = [m for m in merged if m != "*"]
+                        prov_info["discovered"] = len(discovered)
+                except Exception as err:
+                    prov_info["error"] = str(err)
+            results["providers"][name] = prov_info
+            results["total_models"] += len(prov_info["models"])
+        return results
+
     def _resolve_env(self, cfg: Dict) -> Dict:
+        aliases = {
+            "OPENAI_API_KEY": ["OPENAI_API_KEY", "OPEN_AI_API_KEY"],
+            "GOOGLE_API_KEY": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+            "KIMI_API_KEY": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
+            "GROK_API_KEY": ["GROK_API_KEY", "XAI_API_KEY"],
+            "ANTHROPIC_API_KEY": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+        }
         resolved: Dict[str, Any] = {}
         for key, value in cfg.items():
             if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                 env_var = value[2:-1]
-                resolved[key] = os.environ.get(env_var, "")
+                val = os.environ.get(env_var, "")
+                if not val and env_var in aliases:
+                    for alt in aliases[env_var]:
+                        candidate = os.environ.get(alt, "")
+                        if candidate:
+                            val = candidate
+                            break
+                resolved[key] = val
             elif isinstance(value, dict):
                 resolved[key] = self._resolve_env(value)
             else:
@@ -135,21 +188,35 @@ class ProviderRegistry:
         return self.credential_mode == "keymint"
 
     def supports_model(self, name: str, model: str) -> bool:
-        """Whether a provider can serve ``model``.
-
-        A declared ``models`` list is binding for every provider, local or not.
-        Previously local providers were exempt on the grounds that Ollama serves
-        whatever has been pulled, but that meant a request for ``gpt-4o`` would
-        happily select Ollama and fail at dispatch. A local provider that really
-        should accept anything can simply omit the list.
-        """
+        """Whether a provider can serve ``model``."""
+        if not model or model.lower() in ("auto", "default"):
+            return True
         provider = self.providers.get(name)
         if not provider:
             return False
         models = provider.config.get("models", [])
-        if not models:
+        if not models or "*" in models:
             return True
-        return model in models
+        if model in models:
+            return True
+
+        # Dynamic prefix / family heuristics
+        m_lower = model.lower()
+        if name == "google" and "gemini" in m_lower:
+            return True
+        if name == "openai" and (m_lower.startswith("gpt-") or m_lower.startswith("o1") or m_lower.startswith("o3") or m_lower.startswith("chatgpt")):
+            return True
+        if name == "groq" and ("llama" in m_lower or "mixtral" in m_lower or "gemma" in m_lower):
+            return True
+        if name == "anthropic" and "claude" in m_lower:
+            return True
+        if name == "kimi" and ("moonshot" in m_lower or "kimi" in m_lower):
+            return True
+        if name == "grok" and "grok" in m_lower:
+            return True
+        if name in ("ollama", "vllm", "deepseek_local") and "deepseek" in m_lower:
+            return True
+        return False
 
     def resolve_target_alias(self, target: Optional[str]) -> Optional[str]:
         if not target:

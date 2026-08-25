@@ -41,6 +41,21 @@ services:
       retries: 10
       start_period: 10s
 
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "echo '[ollama-init] Checking and pulling default models...' &&
+       ollama pull $${OLLAMA_INIT_MODEL:-llama3.1} || true &&
+       ollama pull $${EMBEDDING_MODEL:-nomic-embed-text} || true &&
+       echo '[ollama-init] Default Ollama models ready.'"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    restart: "no"
+
   router:
     build:
       # Repo root so the shared policy package is inside the build context.
@@ -63,16 +78,21 @@ services:
       - KUBEMIND_CORS_ORIGINS=${KUBEMIND_CORS_ORIGINS:-http://localhost:9000}
       - KUBEMIND_DEPLOYMENT=${KUBEMIND_DEPLOYMENT:-local}
       - KUBEMIND_CREDENTIAL_MODE=${KUBEMIND_CREDENTIAL_MODE:-direct}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPEN_AI_API_KEY=${OPEN_AI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       # redis (default) or pgvector. Postgres image already includes pgvector.
       - KUBEMIND_SEMANTIC_CACHE_BACKEND=${KUBEMIND_SEMANTIC_CACHE_BACKEND:-redis}
-      # Optional local inference targets (OpenAI-compatible):
-      # - VLLM_BASE_URL=http://vllm:8000/v1
-      # - DEEPSEEK_LOCAL_BASE_URL=http://ollama:11434
-      # Direct mode uses deployment-secret provider keys. Production defaults
-      # to keymint mode and never injects provider credentials into KubeMind.
-      # - ANTHROPIC_BASE_URL=https://api.anthropic.com/v1  # or LiteLLM proxy
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,6 +109,8 @@ services:
       dockerfile: services/mind/Dockerfile
     ports:
       - "9081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
       - OLLAMA_BASE_URL=http://ollama:11434
@@ -109,6 +131,8 @@ services:
       dockerfile: services/agents/Dockerfile
     ports:
       - "9082:8082"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
       - ROUTER_URL=http://router:8080
@@ -130,6 +154,8 @@ services:
       dockerfile: services/sentinel/Dockerfile
     ports:
       - "9083:8083"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql://tricore:tricore@postgres:5432/tricore
       # Hash-chained audit ledger (falls back to SQLite if unset).
@@ -149,6 +175,8 @@ services:
     build: ./dashboard
     ports:
       - "9000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - NEXTAUTH_URL=http://localhost:9000
       - ROUTER_URL=http://router:8080

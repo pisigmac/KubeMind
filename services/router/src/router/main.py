@@ -677,10 +677,16 @@ async def _dispatch_chat(
             await _emit_decision(record, correlation_id)
             raise HTTPException(status_code=503, detail="No eligible provider available for streaming")
 
+        stream_req = req
+        if not req.model or req.model.lower() in ("auto", "default"):
+            prov_models = [m for m in selected_candidate.config.get("models", []) if m != "*"]
+            resolved_m = prov_models[0] if prov_models else "llama3.1"
+            stream_req = req.model_copy(update={"model": resolved_m})
+
         async def sse_event_stream():
             de_anon = StreamingDeAnonymizer(active_token_map)
             if hasattr(selected_candidate, "chat_stream"):
-                async for raw_chunk in selected_candidate.chat_stream(req):
+                async for raw_chunk in selected_candidate.chat_stream(stream_req):
                     if raw_chunk.startswith("data: ") and not raw_chunk.startswith("data: [DONE]"):
                         payload_str = raw_chunk[6:].strip()
                         try:
@@ -706,7 +712,7 @@ async def _dispatch_chat(
                                 "id": f"chatcmpl-{int(time.time()*1000)}",
                                 "object": "chat.completion.chunk",
                                 "created": int(time.time()),
-                                "model": req.model,
+                                "model": stream_req.model,
                                 "choices": [{"index": 0, "delta": {"content": flushed}, "finish_reason": None}],
                             }
                             yield f"data: {json.dumps(flush_chunk)}\n\n"
@@ -714,21 +720,24 @@ async def _dispatch_chat(
                     else:
                         yield raw_chunk
             else:
-                resp = await selected_candidate.chat(req)
-                content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
-                restored = restore_string(content, active_token_map)
+                resp = await selected_candidate.chat(stream_req)
+                content = (
+                    resp.get("choices", [{}])[0].get("message", {}).get("content") or ""
+                )
+                flushed = de_anon.transform_chunk(content) + de_anon.flush()
                 chunk = {
-                    "id": resp.get("id", f"chatcmpl-{int(time.time()*1000)}"),
+                    "id": f"chatcmpl-{int(time.time()*1000)}",
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
-                    "model": req.model,
-                    "choices": [{"index": 0, "delta": {"content": restored}, "finish_reason": "stop"}],
+                    "model": stream_req.model,
+                    "choices": [{"index": 0, "delta": {"content": flushed}, "finish_reason": "stop"}],
                 }
                 yield f"data: {json.dumps(chunk)}\n\n"
                 yield "data: [DONE]\n\n"
 
-        record.status = "success"
+        record.route_target = f"{selected_candidate.name}/{stream_req.model}"
         record.provider = selected_candidate.name
+        record.status = "success"
         record.latency_ms = (time.perf_counter() - t0) * 1000
         await _emit_decision(record, correlation_id)
         return StreamingResponse(sse_event_stream(), media_type="text/event-stream")
@@ -743,8 +752,14 @@ async def _dispatch_chat(
 
     for attempt, candidate in enumerate(chain):
         call_start = time.perf_counter()
+        call_req = req
+        if not req.model or req.model.lower() in ("auto", "default"):
+            prov_models = [m for m in candidate.config.get("models", []) if m != "*"]
+            resolved_m = prov_models[0] if prov_models else "llama3.1"
+            call_req = req.model_copy(update={"model": resolved_m})
+
         try:
-            candidate_response = await candidate.chat(req)
+            candidate_response = await candidate.chat(call_req)
             # Feeds the `latency` policy and the max_latency_ms budget, which
             # would otherwise have nothing measured to work from.
             candidate.observe_latency((time.perf_counter() - call_start) * 1000)
@@ -792,6 +807,16 @@ async def _dispatch_chat(
         await usage_tracker.record(workspace_id, provider.name, req.model, usage)
     if rate_limiter:
         await rate_limiter.record(workspace_id, req.model, usage)
+
+    p_tokens = usage.get("prompt_tokens", 0)
+    c_tokens = usage.get("completion_tokens", 0)
+    t_tokens = usage.get("total_tokens", p_tokens + c_tokens)
+    is_free_prov = provider.name in ("ollama", "mock", "mock-local", "local_dev", "deepseek_local", "vllm")
+    
+    record.prompt_tokens = p_tokens
+    record.completion_tokens = c_tokens
+    record.total_tokens = t_tokens
+    record.cost_usd = 0.0 if is_free_prov else round(t_tokens * 0.000002, 6)
 
     latency_ms = (time.perf_counter() - t0) * 1000
     route_target = f"{provider.name}/{req.model}"
@@ -1369,3 +1394,42 @@ async def cache_stats(auth=Depends(get_auth)):
         semantic_cache and semantic_cache.partition_by_intent
     )
     return stats
+
+
+@app.get("/v1/models")
+async def list_models(auth=Depends(get_auth)):
+    """List all models currently available across local and cloud providers."""
+    if not registry:
+        raise HTTPException(status_code=503, detail="Provider registry not initialized")
+    
+    models = []
+    seen = set()
+    for name, provider in registry.providers.items():
+        prov_models = [m for m in provider.config.get("models", []) if m != "*"]
+        for m in prov_models:
+            key = f"{name}:{m}"
+            if key not in seen:
+                seen.add(key)
+                models.append({
+                    "id": m,
+                    "object": "model",
+                    "created": 1700000000,
+                    "owned_by": name,
+                    "permission": [],
+                    "root": m,
+                    "parent": None,
+                    "free": bool(provider.config.get("free", False)),
+                    "priority": provider.config.get("priority", 99),
+                    "healthy": provider.can_execute(),
+                })
+    return {"object": "list", "data": models}
+
+
+@app.post("/v1/models/sync")
+async def sync_models(auth=Depends(get_auth)):
+    """Trigger live upstream model discovery across all configured providers."""
+    if not registry:
+        raise HTTPException(status_code=503, detail="Provider registry not initialized")
+    
+    summary = await registry.sync_upstream_models()
+    return {"status": "ok", "summary": summary}

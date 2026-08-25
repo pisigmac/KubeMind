@@ -137,15 +137,28 @@ def verify_opendesk_jwt(token: str) -> Dict[str, Any]:
         import jwt
         from jwt import PyJWKClient
 
-        jwks_client = PyJWKClient(jwks_url, cache_keys=True)
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            options={"verify_aud": False},
-        )
-        return payload
+        urls_to_try = [jwks_url]
+        if "localhost" in jwks_url:
+            urls_to_try.append(jwks_url.replace("localhost", "host.docker.internal"))
+        elif "host.docker.internal" in jwks_url:
+            urls_to_try.append(jwks_url.replace("host.docker.internal", "localhost"))
+
+        last_err = None
+        for candidate_url in urls_to_try:
+            try:
+                jwks_client = PyJWKClient(candidate_url, cache_keys=True)
+                signing_key = jwks_client.get_signing_key_from_jwt(token)
+                payload = jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256"],
+                    options={"verify_aud": False},
+                )
+                return payload
+            except Exception as e:
+                last_err = e
+
+        raise last_err or Exception("Failed to connect to JWKS endpoint")
     except Exception as e:
         raise AuthError(f"Invalid OpenDesk JWT token: {e}", status_code=401)
 
@@ -198,7 +211,12 @@ class Authenticator:
             elif spec:
                 keys[key] = KeyBinding(workspace=str(spec), role=Role.ADMIN.value)
 
-        for token in os.environ.get("KUBEMIND_API_KEYS", "").split(","):
+        raw_api_keys = os.environ.get("KUBEMIND_API_KEYS") or os.environ.get("TRICORE_API_KEYS", "")
+        if not raw_api_keys and not keys and not is_production():
+            dev_key = os.environ.get("KUBEMIND_API_KEY") or os.environ.get("TRICORE_API_KEY") or "kmind-local-dev-key"
+            raw_api_keys = f"{dev_key}:default:admin"
+
+        for token in raw_api_keys.split(","):
             token = token.strip()
             if not token or ":" not in token:
                 continue

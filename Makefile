@@ -19,6 +19,9 @@ seed:
 verify-ledger:
 	./scripts/verify_ledger.sh
 
+test-providers:
+	./scripts/test_providers.sh
+
 # ── Docker Compose ───────────────────────────────────────────────
 up:
 	./scripts/start_all.sh --build

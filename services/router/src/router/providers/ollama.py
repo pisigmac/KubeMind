@@ -123,5 +123,17 @@ class OllamaProvider(BaseProvider):
         self.record_failure()
         return False
 
+    async def fetch_upstream_models(self) -> list[str]:
+        """Dynamically discover locally installed model weights from Ollama."""
+        try:
+            resp = await self.client.get("/api/tags", timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and "models" in data and isinstance(data["models"], list):
+                    return [m["name"] for m in data["models"] if isinstance(m, dict) and "name" in m]
+        except Exception:
+            pass
+        return []
+
     async def close(self):
         await self.client.aclose()

@@ -524,7 +524,7 @@ func executeChatStream(cfg *internal.Config, model string, history []ChatMessage
 	payload := ChatPayload{
 		Model:       model,
 		Messages:    history,
-		Stream:      true,
+		Stream:      false,
 		EnableCache: true,
 	}
 
@@ -557,8 +557,33 @@ func executeChatStream(cfg *internal.Config, model string, history []ChatMessage
 	}
 
 	fmt.Printf("%sassistant>%s ", colorGreen, colorReset)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("error reading response: %w", err)
+	}
+
+	bodyStr := strings.TrimSpace(string(respBody))
+	if strings.HasPrefix(bodyStr, "{") {
+		var fullResp struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				Text string `json:"text"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(respBody, &fullResp); err == nil && len(fullResp.Choices) > 0 {
+			content := fullResp.Choices[0].Message.Content
+			if content == "" {
+				content = fullResp.Choices[0].Text
+			}
+			fmt.Println(content)
+			return content, nil
+		}
+	}
+
 	var fullReply strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(strings.NewReader(bodyStr))
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

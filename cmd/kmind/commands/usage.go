@@ -14,6 +14,7 @@ Commands:
   status            Check health of all services
   top               Live real-time terminal TUI cluster monitor
   chat [model]      Interactive real-time streaming REPL
+  sync-models       Scan & register live upstream models across all active providers (OpenAI, Gemini, Groq, Ollama)
   logs [service]    Tail logs for a service
 
   analytics [hours] Show CFO-level token usage and spend breakdown (default: 24h)
