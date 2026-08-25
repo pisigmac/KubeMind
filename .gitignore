@@ -116,3 +116,6 @@ docs/design/
 # Landing page (marketing site — tracked separately, large node_modules)
 landing/
 theme_selector/
+
+# Backups
+backups/

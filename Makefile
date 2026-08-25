@@ -1,21 +1,33 @@
-.PHONY: build test test-integration lint typecheck security ci up down status clean cli eval eval-sweep eval-calibrate eval-ci eval-train-linear demo helm-template
+.PHONY: build test test-integration lint typecheck security ci up down status clean cli eval eval-sweep eval-calibrate eval-ci eval-train-linear demo helm-template start stop restart status-all seed backup verify-ledger
+
+# ── Stack Orchestration Scripts ──────────────────────────────────
+start:
+	./scripts/start_all.sh
+
+stop:
+	./scripts/stop_all.sh
+
+restart:
+	./scripts/restart_all.sh
+
+status-all:
+	./scripts/status_all.sh
+
+seed:
+	./scripts/seed_demo_data.sh
+
+verify-ledger:
+	./scripts/verify_ledger.sh
 
 # ── Docker Compose ───────────────────────────────────────────────
 up:
-	docker compose up -d --build --remove-orphans
+	./scripts/start_all.sh --build
 
 down:
-	docker compose down -v --remove-orphans
+	./scripts/stop_all.sh -v
 
 status:
-	@echo "=== KubeMind Status ==="
-	@docker compose ps
-	@echo ""
-	@echo "Health checks:"
-	@curl -s http://localhost:9080/health || echo "router: DOWN"
-	@curl -s http://localhost:9081/health || echo "mind: DOWN"
-	@curl -s http://localhost:9082/health || echo "agents: DOWN"
-	@curl -s http://localhost:9083/health || echo "sentinel: DOWN"
+	./scripts/status_all.sh
 
 logs:
 	docker compose logs -f $(SERVICE)
