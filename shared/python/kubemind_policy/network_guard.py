@@ -7,9 +7,8 @@ or tool execution, preventing data exfiltration to unauthorized external endpoin
 from __future__ import annotations
 
 import ipaddress
-import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from dataclasses import dataclass
+from typing import List, Optional, Set
 from urllib.parse import urlparse
 
 # Default trusted LLM host suffixes

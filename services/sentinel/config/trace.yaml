@@ -1,6 +1,6 @@
 storage:
   local:
-    path: "./data/tracer.db"
+    path: "./data/sentinel.db"
     retention_days: 90
   cloud_sync:
     enabled: false

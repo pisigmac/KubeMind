@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict
 import httpx
 
 try:

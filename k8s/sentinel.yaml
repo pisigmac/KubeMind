@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tracer
-  namespace: tricore
+  name: sentinel
+  namespace: kubemind
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: tracer
+      app: sentinel
   template:
     metadata:
       labels:
-        app: tracer
+        app: sentinel
     spec:
       containers:
-        - name: tracer
-          image: pisigmac/tricore-tracer:latest
+        - name: sentinel
+          image: pisigmac/kubemind-sentinel:latest
           ports:
             - containerPort: 8083
           envFrom:
             - configMapRef:
-                name: tricore-config
+                name: kubemind-config
           volumeMounts:
-            - name: tracer-data
+            - name: sentinel-data
               mountPath: /app/data
           resources:
             requests:
@@ -32,18 +32,18 @@ spec:
               memory: "256Mi"
               cpu: "250m"
       volumes:
-        - name: tracer-data
+        - name: sentinel-data
           persistentVolumeClaim:
-            claimName: tracer-pvc
+            claimName: sentinel-pvc
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: tracer
-  namespace: tricore
+  name: sentinel
+  namespace: kubemind
 spec:
   selector:
-    app: tracer
+    app: sentinel
   ports:
     - port: 8083
       targetPort: 8083
@@ -51,8 +51,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: tracer-pvc
-  namespace: tricore
+  name: sentinel-pvc
+  namespace: kubemind
 spec:
   accessModes:
     - ReadWriteOnce

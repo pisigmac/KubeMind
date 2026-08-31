@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/provider";
-import { Nav } from "@/components/ui/nav";
+import { AppShell } from "@/components/ui/app-shell";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "KubeMind — AI Builder Stack",
-  description: "Unified platform for building AI products",
+  title: "KubeMind — AI Sovereign Governance Gateway",
+  description: "Self-hosted AI infrastructure with zero-egress PII redaction and SHA-256 ledger",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,10 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${inter.variable} font-sans`}>
         <AuthProvider>
-          <div className="min-h-screen flex">
-            <Nav />
-            <main className="flex-1 p-6">{children}</main>
-          </div>
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>

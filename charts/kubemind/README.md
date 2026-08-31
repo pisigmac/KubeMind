@@ -3,9 +3,6 @@
 Installs the four core services (`router`, `mind`, `agents`, `sentinel`), the
 dashboard, Postgres with pgvector, and Redis — under the `kubemind` namespace.
 
-Retired names from `k8s/` (`switchboard`, `contextweave`, `tricore`) are not
-used here.
-
 ```bash
 helm upgrade --install kubemind ./charts/kubemind \
   --namespace kubemind --create-namespace \

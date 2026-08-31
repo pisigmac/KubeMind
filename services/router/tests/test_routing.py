@@ -202,7 +202,7 @@ class TestCostOrdering:
 
     def test_priority_orders_within_free_tier(self, registry):
         eligible = registry.eligible_providers("llama3.1")
-        assert [p.name for p in eligible] == ["ollama", "vllm"]
+        assert [p.name for p in eligible] == ["ollama", "groq", "vllm"]
 
     def test_unhealthy_provider_excluded(self, registry):
         _open_circuit(registry, "ollama")

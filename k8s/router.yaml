@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: switchboard
-  namespace: tricore
+  name: router
+  namespace: kubemind
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: switchboard
+      app: router
   template:
     metadata:
       labels:
-        app: switchboard
+        app: router
     spec:
       containers:
-        - name: switchboard
-          image: pisigmac/tricore-switchboard:latest
+        - name: router
+          image: pisigmac/kubemind-router:latest
           ports:
             - containerPort: 8080
           envFrom:
             - configMapRef:
-                name: tricore-config
+                name: kubemind-config
             - secretRef:
-                name: tricore-secrets
+                name: kubemind-secrets
           resources:
             requests:
               memory: "256Mi"
@@ -34,11 +34,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: switchboard
-  namespace: tricore
+  name: router
+  namespace: kubemind
 spec:
   selector:
-    app: switchboard
+    app: router
   ports:
     - port: 8080
       targetPort: 8080
@@ -46,13 +46,13 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: switchboard-hpa
-  namespace: tricore
+  name: router-hpa
+  namespace: kubemind
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: switchboard
+    name: router
   minReplicas: 2
   maxReplicas: 10
   metrics:

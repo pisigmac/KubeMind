@@ -61,10 +61,7 @@ class PgVectorStore:
             from kubemind_config import get_database_url
             self.database_url = database_url or get_database_url()
         except ImportError:
-            self.database_url = database_url or os.environ.get(
-                "DATABASE_URL",
-                "postgresql://tricore:tricore@localhost:5432/tricore",
-            )
+            self.database_url = database_url or os.environ.get("DATABASE_URL", "")
         self.dims = dims
         self.ttl_seconds = ttl_seconds
         self.max_entries = max_entries

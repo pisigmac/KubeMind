@@ -40,10 +40,10 @@ class AgentEngine:
             self.sentinel_url = get_sentinel_url()
             self._db_url_getter = get_database_url
         except ImportError:
-            self.router_url = os.environ.get("ROUTER_URL", "http://localhost:9080")
-            self.mind_url = os.environ.get("MIND_URL", "http://localhost:9081")
-            self.sentinel_url = os.environ.get("SENTINEL_URL", "http://localhost:9083")
-            self._db_url_getter = lambda: os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
+            self.router_url = os.environ.get("ROUTER_URL", "http://router:8080")
+            self.mind_url = os.environ.get("MIND_URL", "http://mind:8081")
+            self.sentinel_url = os.environ.get("SENTINEL_URL", "http://sentinel:8083")
+            self._db_url_getter = lambda: os.environ.get("DATABASE_URL", "")
         self.default_model = os.environ.get("AGENT_MODEL", "llama3.1")
         self.max_steps = int(os.environ.get("MAX_STEPS", "20"))
         self.engine = None
@@ -53,6 +53,8 @@ class AgentEngine:
 
     async def init(self):
         db_url = self._db_url_getter()
+        if not db_url:
+            raise RuntimeError("DATABASE_URL environment variable is required")
         async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
         self.engine = create_async_engine(async_url, echo=False)
 
@@ -256,7 +258,7 @@ class AgentEngine:
                     f"{self.router_url}/v1/chat/completions",
                     headers={
                         "X-Workspace-ID": workspace_id,
-                        "Authorization": "Bearer tricore-local-dev-key",
+                        "Authorization": "Bearer kmind-local-dev-key",
                     },
                     json={
                         "model": model or self.default_model,

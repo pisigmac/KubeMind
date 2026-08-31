@@ -1,6 +1,6 @@
-# Tricore End-to-End Production Verification Suite (`test.md`)
+# KubeMind End-to-End Production Verification Suite (`test.md`)
 
-This document provides a comprehensive, production-grade test suite for the **Tricore** unified AI builder stack. Follow these step-by-step procedures to validate service health, inter-service communication, data ingestion, LLM routing, agent execution, telemetry collection, and dashboard functionality.
+This document provides a comprehensive, production-grade test suite for the **KubeMind** unified AI builder stack. Follow these step-by-step procedures to validate service health, inter-service communication, data ingestion, LLM routing, agent execution, telemetry collection, and dashboard functionality.
 
 ---
 
@@ -191,7 +191,7 @@ curl -s -X POST http://localhost:9082/v1/missions \
   -H "Content-Type: application/json" \
   -H "X-Workspace-ID: default" \
   -d '{
-    "prompt": "Create a file named test_output.txt with content Hello Tricore",
+    "prompt": "Create a file named test_output.txt with content Hello KubeMind",
     "mode": "sync"
   }' | jq .
 ```
@@ -272,7 +272,7 @@ Verify that the Next.js Web Dashboard loads and connects to all microservices.
 Save the following one-liner to verify all endpoints in sequence:
 
 ```bash
-echo "=== TRICORE E2E VERIFICATION ===" && \
+echo "=== KUBEMIND E2E VERIFICATION ===" && \
 curl -sf http://localhost:9080/health && echo " -> Router OK" && \
 curl -sf http://localhost:9081/health && echo " -> Mind OK" && \
 curl -sf http://localhost:9082/health && echo " -> Agents OK" && \

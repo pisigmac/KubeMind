@@ -82,9 +82,9 @@ class KnowledgeStore:
             from kubemind_config import get_database_url
             db_url = db_url or get_database_url()
         except ImportError:
-            db_url = db_url or os.environ.get(
-                "DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore"
-            )
+            db_url = db_url or os.environ.get("DATABASE_URL")
+            if not db_url:
+                raise RuntimeError("DATABASE_URL environment variable is required")
         sqlite = db_url.startswith("sqlite")
         if sqlite:
             async_url = db_url if "+aiosqlite" in db_url else db_url.replace(

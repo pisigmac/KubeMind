@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dashboard
-  namespace: tricore
+  namespace: kubemind
 spec:
   replicas: 2
   selector:
@@ -15,14 +15,14 @@ spec:
     spec:
       containers:
         - name: dashboard
-          image: pisigmac/tricore-dashboard:latest
+          image: pisigmac/kubemind-dashboard:latest
           ports:
             - containerPort: 3000
           envFrom:
             - configMapRef:
-                name: tricore-config
+                name: kubemind-config
             - secretRef:
-                name: tricore-secrets
+                name: kubemind-secrets
           resources:
             requests:
               memory: "128Mi"
@@ -35,7 +35,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: dashboard
-  namespace: tricore
+  namespace: kubemind
 spec:
   selector:
     app: dashboard
@@ -46,13 +46,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: tricore-ingress
-  namespace: tricore
+  name: kubemind-ingress
+  namespace: kubemind
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   rules:
-    - host: tricore.local
+    - host: kubemind.local
       http:
         paths:
           - path: /

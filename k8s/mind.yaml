@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: contextweave
-  namespace: tricore
+  name: mind
+  namespace: kubemind
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: contextweave
+      app: mind
   template:
     metadata:
       labels:
-        app: contextweave
+        app: mind
     spec:
       containers:
-        - name: contextweave
-          image: pisigmac/tricore-contextweave:latest
+        - name: mind
+          image: pisigmac/kubemind-mind:latest
           ports:
             - containerPort: 8081
           envFrom:
             - configMapRef:
-                name: tricore-config
+                name: kubemind-config
             - secretRef:
-                name: tricore-secrets
+                name: kubemind-secrets
           resources:
             requests:
               memory: "512Mi"
@@ -34,11 +34,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: contextweave
-  namespace: tricore
+  name: mind
+  namespace: kubemind
 spec:
   selector:
-    app: contextweave
+    app: mind
   ports:
     - port: 8081
       targetPort: 8081

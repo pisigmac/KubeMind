@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 class WebConnector:
     def __init__(self):
         self.timeout = 30
-        self.user_agent = "TricoreBot/0.1"
+        self.user_agent = "KubeMindBot/0.1"
 
     async def ingest(self, url: str, node_type: str, workspace_id: str) -> List[Dict]:
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:

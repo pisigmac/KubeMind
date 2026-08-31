@@ -257,7 +257,7 @@ func handleConfig(cfg *internal.Config, args []string, reader *bufio.Reader) {
 		fmt.Printf("  • %-20s %s\n", "Gateway Endpoint:", cfg.GatewayEndpoint)
 		fmt.Printf("  • %-20s %s\n", "Knowledge (Mind):", cfg.KnowledgeEndpoint)
 		fmt.Printf("  • %-20s %s\n", "Agent Swarm:", cfg.APIEndpoint)
-		fmt.Printf("  • %-20s %s\n", "Sentinel Tracer:", cfg.TraceEndpoint)
+		fmt.Printf("  • %-20s %s\n", "Sentinel Audit:", cfg.TraceEndpoint)
 		fmt.Printf("  • %-20s %s\n", "Dashboard Console:", cfg.DashboardURL)
 		fmt.Printf("  • %-20s %s\n", "Workspace ID:", cfg.Workspace.ID)
 		fmt.Printf("  • %-20s %s\n", "API Key:", maskKey(cfg.Workspace.APIKey))
@@ -435,7 +435,7 @@ func handleStatus(cfg *internal.Config) {
 	pingService("Router Gateway", cfg.GatewayEndpoint+"/health", cfg)
 	pingService("Mind Knowledge", cfg.KnowledgeEndpoint+"/health", cfg)
 	pingService("Agents Swarm", cfg.APIEndpoint+"/health", cfg)
-	pingService("Sentinel Tracer", cfg.TraceEndpoint+"/health", cfg)
+	pingService("Sentinel Audit Ledger", cfg.TraceEndpoint+"/health", cfg)
 	fmt.Println(colorCyan + "────────────────────────────────────────────────────────────────────" + colorReset)
 }
 

@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from kubemind_tracing import extract_correlation_id
 from kubemind_auth import (
     API_KEY_HEADER,
     WORKSPACE_HEADER,
@@ -115,8 +116,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-from fastapi.responses import JSONResponse
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
     return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
@@ -128,8 +127,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER, "x-correlation-id"],
 )
-
-from kubemind_tracing import extract_correlation_id
 
 @app.middleware("http")
 async def correlation_id_middleware(request: Request, call_next):

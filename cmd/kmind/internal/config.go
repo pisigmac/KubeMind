@@ -22,7 +22,6 @@ type Config struct {
 func configCandidates(home string) []string {
 	return []string{
 		filepath.Join(home, ".kmind", "config.yaml"),
-		filepath.Join(home, ".tricore", "config.yaml"), // transitional fallback
 	}
 }
 

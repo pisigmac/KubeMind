@@ -6,11 +6,10 @@ runs local speech transcription, and redacts acoustic/verbal PII.
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from kubemind_policy.redaction import pseudonymize_string, restore_string
+from kubemind_policy.redaction import pseudonymize_string
 
 
 @dataclass

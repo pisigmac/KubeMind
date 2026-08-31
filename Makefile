@@ -53,8 +53,6 @@ build:
 cli:
 	mkdir -p bin
 	cd cmd/kmind && go build -o ../../bin/kmind .
-	@# Transitional alias for scripts still calling tricore
-	cd bin && ln -sfn kmind tricore
 
 # ── Testing ──────────────────────────────────────────────────────
 test:
@@ -114,7 +112,7 @@ lint:
 	cd services/sentinel && ruff check src/
 	$(MAKE) typecheck
 	@echo "Linting Go CLI..."
-	cd cmd/tricore && go vet ./...
+	cd cmd/kmind && go vet ./...
 	@echo "Linting Dashboard..."
 	cd dashboard && npm run lint
 

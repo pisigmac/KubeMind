@@ -151,7 +151,6 @@ if [[ ! -f "$KMIND_BIN" ]]; then
     echo -e "    Building kmind binary from source..."
     mkdir -p "$BIN_DIR"
     (cd "${ROOT_DIR}/cmd/kmind" && go build -o "${KMIND_BIN}" .)
-    (cd "$BIN_DIR" && ln -sfn kmind tricore 2>/dev/null || true)
     echo -e "    ${GREEN}✓ Built ${KMIND_BIN}${NC}"
   fi
 fi
@@ -160,7 +159,6 @@ if [[ -f "$KMIND_BIN" ]]; then
   # Symlink to ~/.local/bin if directory exists
   if [[ -d "${HOME}/.local/bin" ]]; then
     ln -sf "$KMIND_BIN" "${HOME}/.local/bin/kmind"
-    ln -sf "$KMIND_BIN" "${HOME}/.local/bin/tricore" 2>/dev/null || true
     echo -e "    ${GREEN}✓ Linked kmind to ${HOME}/.local/bin/kmind${NC}"
   fi
 
@@ -195,7 +193,7 @@ echo -e "  • ${CYAN}Router AI Gateway:${NC}     http://localhost:9080"
 echo -e "  • ${CYAN}Mind Context Engine:${NC}   http://localhost:9081"
 echo -e "  • ${CYAN}Agents Swarm Planner:${NC}  http://localhost:9082"
 echo -e "  • ${CYAN}Sentinel Audit Ledger:${NC} http://localhost:9083"
-echo -e "  • ${CYAN}Postgres (pgvector):${NC}   localhost:9432 (user: tricore, db: tricore)"
+echo -e "  • ${CYAN}Postgres (pgvector):${NC}   localhost:9432 (user: kubemind, db: kubemind)"
 echo -e "  • ${CYAN}Redis Semantic Cache:${NC}  localhost:9379"
 echo -e ""
 echo -e "  ${BOLD}Quick Operations:${NC}"

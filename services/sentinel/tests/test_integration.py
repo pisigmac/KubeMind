@@ -14,12 +14,15 @@ from fastapi.testclient import TestClient
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("TRACER_DB_PATH", str(tmp_path / "spans.db"))
     monkeypatch.setenv("AUDIT_LEDGER_URL", f"sqlite:///{tmp_path}/ledger.db")
-    monkeypatch.delenv("KUBEMIND_API_KEYS", raising=False)
+    monkeypatch.setenv("KUBEMIND_API_KEYS", "kmind-local-dev-key:*:admin")
     monkeypatch.delenv("KUBEMIND_SERVICE_KEY", raising=False)
 
-    from sentinel.main import app
+    from sentinel import main
+    from kubemind_auth import Authenticator
+    main.authenticator = Authenticator.from_config()
 
-    with TestClient(app) as c:
+    with TestClient(main.app) as c:
+        c.headers.update({"X-API-Key": "kmind-local-dev-key"})
         yield c
 
 

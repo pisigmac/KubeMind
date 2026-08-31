@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: deepagents
-  namespace: tricore
+  name: agents
+  namespace: kubemind
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: deepagents
+      app: agents
   template:
     metadata:
       labels:
-        app: deepagents
+        app: agents
     spec:
       containers:
-        - name: deepagents
-          image: pisigmac/tricore-deepagents:latest
+        - name: agents
+          image: pisigmac/kubemind-agents:latest
           ports:
             - containerPort: 8082
           envFrom:
             - configMapRef:
-                name: tricore-config
+                name: kubemind-config
             - secretRef:
-                name: tricore-secrets
+                name: kubemind-secrets
           resources:
             requests:
               memory: "256Mi"
@@ -34,11 +34,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: deepagents
-  namespace: tricore
+  name: agents
+  namespace: kubemind
 spec:
   selector:
-    app: deepagents
+    app: agents
   ports:
     - port: 8082
       targetPort: 8082

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 # Conversational boilerplate patterns to prune from conversation histories
 _BOILERPLATE_PATTERNS = [

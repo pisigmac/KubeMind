@@ -20,7 +20,6 @@ from kubemind_policy import (
     PII_MODES,
     detect,
     pseudonymize_string,
-    redact_string,
     score_injection,
 )
 

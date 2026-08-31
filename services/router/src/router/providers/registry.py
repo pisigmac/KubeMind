@@ -31,7 +31,7 @@ class ProviderRegistry:
     async def load_providers(self):
         config_path = os.environ.get(
             "KUBEMIND_ROUTER_CONFIG",
-            os.environ.get("SWITCHBOARD_CONFIG", "config/gateway.yaml"),
+            os.environ.get("ROUTER_CONFIG", "config/gateway.yaml"),
         )
         with open(config_path) as f:
             raw = yaml.safe_load(f)

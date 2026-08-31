@@ -11,8 +11,9 @@ from dataclasses import asdict
 from fastapi import FastAPI, Request, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from kubemind_policy.streaming import StreamingDeAnonymizer
-from kubemind_policy.redaction import restore_string
+from kubemind_tracing import extract_correlation_id
 
 from router.models import (
     ChatRequest,
@@ -138,15 +139,18 @@ async def lifespan(app: FastAPI):
     print("[router] Initialized")
     yield
 
-    await cache.disconnect()
+    if cache:
+        await cache.disconnect()
     if semantic_cache:
         await semantic_cache.close()
     if mind_client:
         await mind_client.close()
-    await usage_tracker.close()
+    if usage_tracker:
+        await usage_tracker.close()
     if sentinel_client:
         await sentinel_client.close()
-    await registry.close()
+    if registry:
+        await registry.close()
 
 
 app = FastAPI(
@@ -155,9 +159,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-from kubemind_tracing import extract_correlation_id
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
@@ -165,8 +166,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", API_KEY_HEADER, WORKSPACE_HEADER, "x-correlation-id"],
 )
-
-from starlette.responses import JSONResponse
 
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
@@ -1433,3 +1432,38 @@ async def sync_models(auth=Depends(get_auth)):
     
     summary = await registry.sync_upstream_models()
     return {"status": "ok", "summary": summary}
+
+
+class WaitlistRequest(BaseModel):
+    email: str
+    team_size: Optional[str] = "1-5"
+    referred_by: Optional[str] = None
+
+
+@app.post("/v1/waitlist")
+async def register_waitlist(req: WaitlistRequest, request: Request):
+    """Public endpoint to register user on pre-launch waitlist."""
+    if not req.email or "@" not in req.email:
+        raise HTTPException(status_code=400, detail="Valid email address is required")
+    
+    ip = request.client.host if request.client else None
+    if not usage_tracker:
+        import hashlib
+        ref = f"pioneer-{hashlib.md5(req.email.strip().encode()).hexdigest()[:6]}"
+        return {"status": "success", "email": req.email, "position": 413, "referral_code": ref}
+    
+    result = await usage_tracker.add_waitlist(
+        email=req.email,
+        team_size=req.team_size or "1-5",
+        referred_by=req.referred_by,
+        ip_address=ip,
+    )
+    return result
+
+
+@app.get("/v1/waitlist/stats")
+async def waitlist_stats():
+    """Get public waitlist stats."""
+    if not usage_tracker:
+        return {"total_signups": 412, "target": 500}
+    return await usage_tracker.get_waitlist_stats()

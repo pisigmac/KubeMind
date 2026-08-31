@@ -6,10 +6,9 @@ with high-tier verifier models in parallel, cutting TTFT and cost.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable, Tuple
 
 
 @dataclass

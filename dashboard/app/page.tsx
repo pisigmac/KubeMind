@@ -21,7 +21,7 @@ export default function HomePage() {
     { name: "Router Gateway", healthy: false, version: "-", loading: true, port: "9080", icon: Network },
     { name: "Mind Context", healthy: false, version: "-", loading: true, port: "9081", icon: Database },
     { name: "Agents Planner", healthy: false, version: "-", loading: true, port: "9082", icon: Bot },
-    { name: "Sentinel Tracer", healthy: false, version: "-", loading: true, port: "9083", icon: BarChart3 },
+    { name: "Sentinel Audit Ledger", healthy: false, version: "-", loading: true, port: "9083", icon: BarChart3 },
   ]);
   const [usage, setUsage] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
@@ -45,7 +45,7 @@ export default function HomePage() {
         { name: "Router Gateway", port: "9080", icon: Network },
         { name: "Mind Context", port: "9081", icon: Database },
         { name: "Agents Planner", port: "9082", icon: Bot },
-        { name: "Sentinel Tracer", port: "9083", icon: BarChart3 },
+        { name: "Sentinel Audit Ledger", port: "9083", icon: BarChart3 },
       ];
 
       setServices(

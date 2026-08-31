@@ -6,9 +6,9 @@ engine:
 
 tools:
   enabled: [filesystem, shell, web_search, code_analyzer, knowledge]
-  filesystem:
-    base_path: "/tmp/tricore"
-    allowed_extensions: [".txt", ".md", ".py", ".js", ".ts", ".json", ".yaml"]
+  workspace:
+    base_path: "/tmp/kubemind"
+    max_file_size_bytes: 10485760  # 10 MB
   shell:
     allowed_commands: ["python", "node", "git", "curl", "cat", "ls", "grep", "find"]
     blocked_patterns: ["rm -rf /", "> /dev/null", "| sh", "| bash"]

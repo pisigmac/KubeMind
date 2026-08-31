@@ -44,7 +44,7 @@ Respond with JSON only:
                 f"{self.router_url}/v1/chat/completions",
                 headers={
                     "X-Workspace-ID": "default",
-                    "Authorization": "Bearer tricore-local-dev-key",
+                    "Authorization": "Bearer kmind-local-dev-key",
                     "Content-Type": "application/json",
                 },
                 json={

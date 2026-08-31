@@ -54,7 +54,7 @@ class FilesystemTool(BaseTool):
     }
 
     async def run(self, arguments: Dict, workspace_id: str) -> Any:
-        base = f"/tmp/tricore/{workspace_id}"
+        base = f"/tmp/kubemind/{workspace_id}"
         os.makedirs(base, exist_ok=True)
 
         rel_path = arguments.get("path", "").lstrip("/").replace("..", "")
@@ -165,7 +165,7 @@ class ShellTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=min(timeout, 60),
-                cwd=f"/tmp/tricore/{workspace_id}",
+                cwd=f"/tmp/kubemind/{workspace_id}",
             )
             return {
                 "stdout": result.stdout,
@@ -238,7 +238,7 @@ class KnowledgeTool(BaseTool):
                     f"{cw_url}/v1/query",
                     headers={
                         "X-Workspace-ID": workspace_id,
-                        "Authorization": "Bearer tricore-local-dev-key",
+                        "Authorization": "Bearer kmind-local-dev-key",
                         "Content-Type": "application/json",
                     },
                     json={
@@ -264,7 +264,7 @@ class CodeAnalyzerTool(BaseTool):
         path = arguments.get("path", "")
         fix = arguments.get("fix", False)
 
-        base = f"/tmp/tricore/{workspace_id}"
+        base = f"/tmp/kubemind/{workspace_id}"
         full_path = os.path.join(base, path.lstrip("/"))
 
         if not os.path.exists(full_path):

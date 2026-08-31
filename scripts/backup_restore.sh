@@ -39,9 +39,9 @@ case "$COMMAND" in
     echo -e "${CYAN}${BOLD}====================================================================${NC}\n"
 
     echo -e "  ${BOLD}[1/2] Dumping Postgres database (pgvector tables)...${NC}"
-    docker compose exec -T postgres pg_dump -U tricore -d tricore > "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || {
+    docker compose exec -T postgres pg_dump -U kubemind -d kubemind > "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || {
       echo -e "    ${YELLOW}⚠ Postgres container not running in docker compose; dumping local instance if available...${NC}"
-      pg_dump -U tricore -h localhost -p 9432 -d tricore > "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || echo "-- empty dump" > "${TEMP_DIR}/postgres_dump.sql"
+      pg_dump -U kubemind -h localhost -p 9432 -d kubemind > "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || echo "-- empty dump" > "${TEMP_DIR}/postgres_dump.sql"
     }
 
     echo -e "  ${BOLD}[2/2] Archiving configuration and database dump...${NC}"
@@ -67,8 +67,8 @@ case "$COMMAND" in
 
     if [[ -f "${TEMP_DIR}/postgres_dump.sql" ]]; then
       echo -e "  ${BOLD}Restoring Postgres database...${NC}"
-      docker compose exec -T postgres psql -U tricore -d tricore < "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || {
-        psql -U tricore -h localhost -p 9432 -d tricore < "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || true
+      docker compose exec -T postgres psql -U kubemind -d kubemind < "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || {
+        psql -U kubemind -h localhost -p 9432 -d kubemind < "${TEMP_DIR}/postgres_dump.sql" 2>/dev/null || true
       }
       echo -e "  ${GREEN}✓ Database restore completed.${NC}"
     fi

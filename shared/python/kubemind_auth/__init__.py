@@ -17,7 +17,7 @@ import hmac
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from kubemind_auth.deployment import deployment_profile, is_production
 
@@ -211,9 +211,9 @@ class Authenticator:
             elif spec:
                 keys[key] = KeyBinding(workspace=str(spec), role=Role.ADMIN.value)
 
-        raw_api_keys = os.environ.get("KUBEMIND_API_KEYS") or os.environ.get("TRICORE_API_KEYS", "")
+        raw_api_keys = os.environ.get("KUBEMIND_API_KEYS", "")
         if not raw_api_keys and not keys and not is_production():
-            dev_key = os.environ.get("KUBEMIND_API_KEY") or os.environ.get("TRICORE_API_KEY") or "kmind-local-dev-key"
+            dev_key = os.environ.get("KUBEMIND_API_KEY", "kmind-local-dev-key")
             raw_api_keys = f"{dev_key}:default:admin"
 
         for token in raw_api_keys.split(","):
@@ -311,16 +311,20 @@ class Authenticator:
                 raise AuthError("Invalid API key")
             workspace = binding.workspace
             role = binding.role
-            # A header may not redirect to a different workspace than the key's.
-            if workspace_header and workspace_header != workspace:
-                raise AuthError(
-                    "Workspace header does not match API key", status_code=403
-                )
+            # A header may not redirect to a different workspace than the key's unless the key is a wildcard '*'.
+            if workspace_header:
+                if workspace != "*" and workspace_header != workspace:
+                    raise AuthError(
+                        "Workspace header does not match API key", status_code=403
+                    )
+                workspace = workspace_header
+            elif workspace == "*":
+                workspace = self.default_workspace
             scopes = ROLE_SCOPES.get(role, {"*"} if role == Role.ADMIN.value else set())
             return AuthResult(
                 workspace_id=workspace,
                 authenticated=True,
-                key_id=workspace,
+                key_id=binding.workspace,
                 role=role,
                 scopes=scopes,
             )
@@ -352,6 +356,10 @@ class Authenticator:
                 raise AuthError("Invalid workspace identifier", status_code=400)
             return requested
         if auth.authenticated and requested != auth.workspace_id:
+            if auth.key_id == "*" and (auth.role == Role.ADMIN.value or "*" in auth.scopes):
+                if not valid_workspace(requested):
+                    raise AuthError("Invalid workspace identifier", status_code=400)
+                return requested
             raise AuthError(
                 "Cannot access a workspace other than the one bound to this key",
                 status_code=403,

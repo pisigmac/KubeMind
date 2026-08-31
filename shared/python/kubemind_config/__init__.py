@@ -54,12 +54,40 @@ def get_dashboard_url(default: Optional[str] = None) -> str:
     ).rstrip("/")
 
 
+def is_production() -> bool:
+    """Return whether KubeMind is running in production mode."""
+    return os.environ.get("KUBEMIND_DEPLOYMENT", "local").strip().lower() == "production"
+
+
 def get_database_url(default: Optional[str] = None) -> str:
-    """Return the PostgreSQL connection string."""
-    return os.environ.get(
-        "DATABASE_URL",
-        default or "postgresql://tricore:tricore@localhost:5432/tricore",
-    )
+    """Return the PostgreSQL connection string.
+    In production mode, strictly refuses default or plaintext insecure credentials.
+    """
+    raw = os.environ.get("DATABASE_URL")
+    if not raw and (os.environ.get("POSTGRES_USER") and os.environ.get("POSTGRES_PASSWORD")):
+        user = os.environ["POSTGRES_USER"]
+        pw = os.environ["POSTGRES_PASSWORD"]
+        host = os.environ.get("POSTGRES_HOST", "postgres")
+        port = os.environ.get("POSTGRES_PORT", "5432")
+        db = os.environ.get("POSTGRES_DB", "kubemind")
+        raw = f"postgresql://{user}:{pw}@{host}:{port}/{db}"
+
+    if is_production():
+        if not raw or "kubemind:kubemind@" in raw or "postgres:postgres@" in raw:
+            raise RuntimeError(
+                "[Security Alert] KUBEMIND_DEPLOYMENT=production refuses default/insecure database credentials. "
+                "Configure a secure DATABASE_URL or POSTGRES_PASSWORD in environment."
+            )
+        return raw
+
+    if raw:
+        return raw
+    user = os.environ.get("POSTGRES_USER", "kubemind")
+    pw = os.environ.get("POSTGRES_PASSWORD", "kubemind")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    db = os.environ.get("POSTGRES_DB", "kubemind")
+    return default or f"postgresql://{user}:{pw}@{host}:{port}/{db}"
 
 
 def get_redis_url(default: Optional[str] = None) -> str:

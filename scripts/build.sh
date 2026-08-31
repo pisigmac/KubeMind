@@ -46,9 +46,8 @@ build_cli() {
     mkdir -p bin
     cd cmd/kmind
     go build -o ../../bin/kmind .
-    cd ../../bin
-    ln -sfn kmind tricore
-    success "CLI built successfully at bin/kmind (symlinked to bin/tricore)"
+    cd "${PROJECT_ROOT}"
+    success "CLI built successfully at bin/kmind"
 }
 
 build_docker() {

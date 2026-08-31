@@ -82,7 +82,7 @@ class TestWebSearchTool:
 class TestCodeAnalyzerTool:
     @pytest.mark.asyncio
     async def test_analyze_python(self):
-        # CodeAnalyzerTool resolves paths under /tmp/tricore/{workspace_id}.
+        # CodeAnalyzerTool resolves paths under /tmp/kubemind/{workspace_id}.
         # Write the fixture through FilesystemTool, then analyze by relative path.
         fs = FilesystemTool()
         await fs.run({"path": "sample.py", "action": "write", "content": "import os\n\ndef foo():\n    x = 1\n"}, "test")

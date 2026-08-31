@@ -6,7 +6,6 @@ sensitive text, PII, payment cards, and credentials before cloud dispatch.
 
 from __future__ import annotations
 
-import base64
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple

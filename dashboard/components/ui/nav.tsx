@@ -17,6 +17,10 @@ export function Nav() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
+  if (pathname?.startsWith("/landing")) {
+    return null;
+  }
+
   return (
     <nav className="w-64 bg-[#0F172A] border-r border-[#1E293B] flex flex-col justify-between h-screen sticky top-0 shrink-0">
       <div>

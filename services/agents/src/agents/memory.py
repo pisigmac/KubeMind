@@ -26,7 +26,7 @@ class MemoryManager:
                 f"{self.mind_url}/v1/query",
                 headers={
                     "X-Workspace-ID": workspace_id,
-                    "Authorization": "Bearer tricore-local-dev-key",
+                    "Authorization": "Bearer kmind-local-dev-key",
                 },
                 json={
                     "query": f"agent_memory agent_id:{agent_id}",
@@ -49,7 +49,7 @@ class MemoryManager:
                 f"{self.mind_url}/v1/ingest",
                 headers={
                     "X-Workspace-ID": workspace_id,
-                    "Authorization": "Bearer tricore-local-dev-key",
+                    "Authorization": "Bearer kmind-local-dev-key",
                 },
                 json={
                     "source": f"memory://{agent_id}/{key}",
@@ -70,7 +70,7 @@ class MemoryManager:
                 f"{self.mind_url}/v1/ingest",
                 headers={
                     "X-Workspace-ID": workspace_id,
-                    "Authorization": "Bearer tricore-local-dev-key",
+                    "Authorization": "Bearer kmind-local-dev-key",
                 },
                 json={
                     "source": f"conversation://{mission_id}/{turn_index}",

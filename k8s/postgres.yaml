@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
-  namespace: tricore
+  namespace: kubemind
 spec:
   replicas: 1
   selector:
@@ -18,14 +18,14 @@ spec:
           image: postgres:16-alpine
           env:
             - name: POSTGRES_USER
-              value: tricore
+              value: kubemind
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: tricore-secrets
+                  name: kubemind-secrets
                   key: postgres-password
             - name: POSTGRES_DB
-              value: tricore
+              value: kubemind
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -40,7 +40,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: tricore
+  namespace: kubemind
 spec:
   selector:
     app: postgres
@@ -52,7 +52,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
-  namespace: tricore
+  namespace: kubemind
 spec:
   accessModes:
     - ReadWriteOnce

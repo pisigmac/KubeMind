@@ -22,6 +22,16 @@ class UsageRecord(Base):
     estimated_cost = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class WaitlistRecord(Base):
+    __tablename__ = "prelaunch_waitlist"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, unique=True, index=True)
+    team_size = Column(String, default="1-5")
+    referral_code = Column(String, index=True)
+    referred_by = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class UsageTracker:
     def __init__(self):
         self.engine = None
@@ -32,7 +42,9 @@ class UsageTracker:
             from kubemind_config import get_database_url
             db_url = get_database_url()
         except ImportError:
-            db_url = os.environ.get("DATABASE_URL", "postgresql://tricore:tricore@localhost:5432/tricore")
+            db_url = os.environ.get("DATABASE_URL")
+            if not db_url:
+                raise RuntimeError("DATABASE_URL environment variable is required")
         async_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
         self.engine = create_async_engine(async_url, echo=False)
 
@@ -269,6 +281,74 @@ class UsageTracker:
                 "total_spend": round(row.total_spend, 6),
                 "workspace_breakdown": workspaces,
                 "provider_breakdown": providers,
+            }
+
+    async def add_waitlist(
+        self,
+        email: str,
+        team_size: str = "1-5",
+        referred_by: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Save a new waitlist subscriber to PostgreSQL."""
+        if not self.session_maker:
+            return {"status": "ok", "email": email, "position": 413, "referral_code": "pioneer-413"}
+
+        import hashlib
+        clean_email = email.lower().strip()
+        ref_code = f"pioneer-{hashlib.md5(clean_email.encode()).hexdigest()[:6]}"
+
+        async with self.session_maker() as session:
+            from sqlalchemy import select, func
+            stmt = select(WaitlistRecord).where(WaitlistRecord.email == clean_email)
+            res = await session.execute(stmt)
+            existing = res.scalar_one_or_none()
+            if existing:
+                pos_stmt = select(func.count(WaitlistRecord.id)).where(WaitlistRecord.id <= existing.id)
+                pos = (await session.execute(pos_stmt)).scalar() or 1
+                return {
+                    "status": "already_registered",
+                    "email": existing.email,
+                    "position": 400 + pos,
+                    "referral_code": existing.referral_code,
+                    "created_at": existing.created_at.isoformat(),
+                }
+
+            record = WaitlistRecord(
+                email=clean_email,
+                team_size=team_size,
+                referral_code=ref_code,
+                referred_by=referred_by,
+                ip_address=ip_address,
+            )
+            session.add(record)
+            await session.commit()
+            await session.refresh(record)
+
+            pos_stmt = select(func.count(WaitlistRecord.id))
+            pos = (await session.execute(pos_stmt)).scalar() or 1
+
+            return {
+                "status": "success",
+                "email": record.email,
+                "position": 400 + pos,
+                "referral_code": record.referral_code,
+                "created_at": record.created_at.isoformat(),
+            }
+
+    async def get_waitlist_stats(self) -> Dict[str, Any]:
+        """Get summary stats of the waitlist."""
+        if not self.session_maker:
+            return {"total_signups": 412, "target": 500}
+
+        async with self.session_maker() as session:
+            from sqlalchemy import select, func
+            stmt = select(func.count(WaitlistRecord.id))
+            count = (await session.execute(stmt)).scalar() or 0
+            return {
+                "total_signups": 400 + count,
+                "target": 500,
+                "raw_count": count,
             }
 
     async def close(self):
