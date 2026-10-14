@@ -41,6 +41,6 @@ All notable changes to the KubeMind AI Gateway & Autonomous Infrastructure platf
 ---
 
 ### 📦 Client Libraries & Packaging
-* **Python SDK (`kubemind-sdk`)**: Available via PyPI with full pyproject.toml and wheel builds.
+* **Python SDK (`kubemind`)**: Published on PyPI as `kubemind` (`pip install kubemind`). Earlier uploads used the name `kubemind-sdk`.
 * **TypeScript SDK (`@kubemind/sdk`)**: Available via npm with native ESM/CJS typings.
 * **Multi-Language CI/CD Pipeline**: GitHub Actions matrix validating Python 3.10/3.11, Node.js 22, Go 1.22, Next.js, and automated E2E test suites.

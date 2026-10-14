@@ -2,6 +2,9 @@
 
 The official TypeScript/Node.js client SDK for **KubeMind** — the self-hosted intelligent AI gateway and governance control plane.
 
+**Author:** Vikas Budde  
+**Repository:** https://github.com/pisigmac/kubemind
+
 ## Installation
 
 ```bash

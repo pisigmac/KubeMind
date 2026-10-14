@@ -32,7 +32,7 @@ Every prompt is evaluated and transformed in microsecond pipelines:
 │ ──────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │
 │ • Local NER DLP  │ │ • 4-Tier RBAC     │ │ • Multi-Agent     │ │ • kmind top TUI   │ │ • @kubemind/sdk   │
 │ • ONNX NER Model │ │ • OpenDesk JWKS   │ │   Swarm Pipeline  │ │ • kmind chat REPL │ │   (TypeScript)    │
-│ • SSE Streaming  │ │ • HashiCorp Vault │ │ • Native MCP      │ │ • PrometheusRules │ │ • kubemind-sdk    │
+│ • SSE Streaming  │ │ • HashiCorp Vault │ │ • Native MCP      │ │ • PrometheusRules │ │ • kubemind        │
 │ • HNSW pgvector  │ │ • AWS Secrets     │ │   Server (Claude) │ │ • Grafana HUD     │ │   (Python)        │
 │ • Wasm Hooks     │ │ • SHA-256 Ledger  │ │ • Sandboxed Tools │ │ • Next.js UI DAG  │ │ • Linux/Mac CLIs  │
 │ • Adaptive T-Soft│ │ • PayDeck Billing │ │ • Tool Invocation │ │ • Billing /billing│ │ • kmind fetch-    │
@@ -122,5 +122,5 @@ Every prompt is evaluated and transformed in microsecond pipelines:
 * **Model Context Protocol (MCP)**: Native JSON-RPC stdio server exposing `kubemind_route`, `kubemind_mind_query`, `kubemind_mind_ingest`, and `kubemind_verify_audit` to Claude Desktop and Cursor IDE.
 * **WebAssembly (Wasm) Hooks**: Microsecond pre- and post-dispatch filter hooks for bespoke regulatory compliance checks.
 * **ONNX NER Engine**: `LocalNEREngine` runs ONNX token classification (`KUBEMIND_NER_ONNX_MODEL_PATH`) for higher-accuracy entity detection; falls back to regex when model not configured.
-* **Client SDKs**: Official type-safe libraries for TypeScript (`@kubemind/sdk`) and Python (`kubemind-sdk`) including `getOrgAnalytics` / `get_org_analytics` for CFO cost reporting.
+* **Client SDKs**: Official type-safe libraries for TypeScript (`@kubemind/sdk`) and Python (`kubemind`) including `getOrgAnalytics` / `get_org_analytics` for CFO cost reporting.
 * **Cloud-Native Deployment**: Production Helm charts with PrometheusRule CRDs and Grafana Dashboards under `charts/kubemind/`.

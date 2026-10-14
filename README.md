@@ -33,7 +33,7 @@ KubeMind intercepts, evaluates, transforms, and routes LLM requests through sub-
         │ ──────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │ │ ───────────────── │
         │ • Local NER DLP  │ │ • 4-Tier RBAC     │ │ • Multi-Agent     │ │ • kmind top TUI   │ │ • @kubemind/sdk   │
         │ • ONNX NER Model │ │ • OpenDesk JWKS   │ │   Swarm Pipeline  │ │ • kmind chat REPL │ │   (TypeScript)    │
-        │ • SSE Streaming  │ │ • HashiCorp Vault │ │ • Native MCP      │ │ • PrometheusRules │ │ • kubemind-sdk    │
+        │ • SSE Streaming  │ │ • HashiCorp Vault │ │ • Native MCP      │ │ • PrometheusRules │ │ • kubemind        │
         │ • HNSW pgvector  │ │ • AWS Secrets     │ │   Server (Claude) │ │ • Grafana HUD     │ │   (Python)        │
         │ • Wasm Hooks     │ │ • SHA-256 Ledger  │ │ • Sandboxed Tools │ │ • Next.js UI DAG  │ │ • Linux/Mac CLIs  │
         │ • Adaptive T-Soft│ │ • PayDeck Billing │ │ • Tool Invocation │ │ • Billing /billing│ │ • kmind fetch-    │
@@ -169,7 +169,7 @@ Logs are written to `logs/latest.log` with full request and response traces.
 
 ## 📦 Client SDKs
 
-- **Python SDK (`kubemind-sdk`)**: [`sdk/python/`](sdk/python) · `pip install kubemind-sdk`
+- **Python SDK (`kubemind`)**: [`sdk/python/`](sdk/python) · `pip install kubemind`
 - **TypeScript / Node.js SDK (`@kubemind/sdk`)**: [`sdk/typescript/`](sdk/typescript) · `npm install @kubemind/sdk`
 - **Interactive Walkthroughs**: [`examples/`](examples) (Python & TypeScript demos)
 

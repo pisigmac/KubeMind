@@ -1,11 +1,11 @@
-# KubeMind Python SDK (`kubemind-sdk`)
+# KubeMind Python SDK (`kubemind`)
 
 The official Python client library for **KubeMind** — the self-hosted intelligent AI gateway and governance control plane.
 
 ## Installation
 
 ```bash
-pip install kubemind-sdk
+pip install kubemind
 ```
 
 ## Quickstart

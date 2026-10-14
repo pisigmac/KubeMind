@@ -22,10 +22,11 @@ npm pack --dry-run
 printf "${GREEN}✓ TypeScript SDK package validated.${NC}\n\n"
 
 # 2. Python SDK
-printf "${BOLD}2. Building and packaging Python SDK (kubemind-sdk)...${NC}\n"
+printf "${BOLD}2. Building and packaging Python SDK (kubemind)...${NC}\n"
 cd "${PROJECT_ROOT}/sdk/python"
 if command -v python3 &>/dev/null; then
     python3 -m pip install --quiet build || true
+    rm -rf dist
     python3 -m build --sdist --wheel . || true
     printf "${GREEN}✓ Python SDK build complete in sdk/python/dist/${NC}\n\n"
 fi

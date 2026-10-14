@@ -3,11 +3,11 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kubemind-sdk"
-version = "0.1.0"
+name = "kubemind"
+version = "0.1.2"
 description = "Official Python client SDK for KubeMind AI Gateway and Governance Control Plane"
 readme = "README.md"
-authors = [{ name = "KubeMind Team", email = "maintainers@kubemind.io" }]
+authors = [{ name = "Vikas Budde", email = "vikas.budde@hotmail.com" }]
 license = { text = "MIT" }
 requires-python = ">=3.8"
 dependencies = [
@@ -28,6 +28,6 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://kubemind.io"
-Documentation = "https://kubemind.io/docs"
-Repository = "https://github.com/kubemind/kubemind"
+Homepage = "https://github.com/pisigmac/kubemind"
+Documentation = "https://raw.githubusercontent.com/pisigmac/KubeMind/refs/heads/master/README.md"
+Repository = "https://github.com/pisigmac/kubemind"

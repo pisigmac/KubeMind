@@ -1,5 +1,5 @@
 {
-  "name": "@kubemind/sdk",
+  "name": "kubemind",
   "version": "0.1.0",
   "description": "Official TypeScript/Node.js client SDK for KubeMind AI Gateway and Governance Control Plane",
   "main": "dist/index.js",
@@ -19,8 +19,17 @@
     "audit-ledger",
     "typescript"
   ],
-  "author": "KubeMind Team",
+  "author": "Vikas Budde",
   "license": "MIT",
+  "homepage": "https://github.com/pisigmac/kubemind",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pisigmac/kubemind.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/pisigmac/kubemind/issues"
+  },
   "devDependencies": {
     "typescript": "^5.9.3"
   },
